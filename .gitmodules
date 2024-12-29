@@ -1,0 +1,3 @@
+[submodule "submodules/ziglua"]
+	path = submodules/ziglua
+	url = https://github.com/natecraddock/ziglua
