@@ -2,7 +2,7 @@
 
 Welcome, sorcerer, to the Sanctum. Write spells in Lua, JavaScript, or WebAssembly to transform event streams of magical energy.
 
-## Overview
+## What is Sanctum?
 
 Sanctum is a platform that enables sorcerers to craft powerful spells that process and transform event streams. Sorcerers
 focus on writing spells in their preferred language, while Sanctum handles the complexities of event storage, state and routing
