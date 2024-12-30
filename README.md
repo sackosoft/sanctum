@@ -22,10 +22,10 @@ Demonstrates event processing with Spells on a throw-away runtime. Runs on a sin
     - [ ] Documentation for spells in the runtime.
 - [ ] Spell Casting
     - [ ] Spells can be loaded dynamically into the sanctum from files.
-    - [ ] Counting loop spell is added with a reusable regression test.
-    - [ ] Malformed spells (spell parse failure) are handled gracefully.
-        - [ ] Handle parsing failing line number from errors Lua message.
-    - [ ] Unstable magic (internal spell failures) is handled gracefully.
+    - [x] Counting loop spell is added with a reusable regression test.
+    - [x] Malformed spells (spell parse failure) are handled gracefully.
+        - [x] Handle parsing failing line number from errors Lua message.
+    - [x] Unstable magic (internal spell failures) is handled gracefully.
     - [ ] Spells can consume magical energy (events).
     - [ ] Spells can produce magical energy or act as a terminal action, producing nothing.
 
