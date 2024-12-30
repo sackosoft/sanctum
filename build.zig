@@ -67,6 +67,7 @@ pub fn build(b: *std.Build) void {
     const ziglua_dep = b.dependency("ziglua", .{
         .target = target,
         .optimize = optimize,
+        .lang = .lua54,
     });
     const ziglua = ziglua_dep.module("ziglua");
     exe.root_module.addImport("ziglua", ziglua);
