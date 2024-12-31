@@ -73,20 +73,14 @@ fn cast_spell(alloc: std.mem.Allocator, spell: Spell) !void {
 
     var i: usize = 0;
     var v: CounterEvent = undefined;
-    while (queue.popFirst()) |e| {
-        // Seems like loading the module does not put the table members in the global namespace, that makes sense.
-        // I guess the top of the stack is the table itself.
-        // if (try lua.getGlobal("cast") != LuaType.function) {
-        //     return error.UncastableSpell;
-        // }
-
-        event = e.*;
+    while (queue.popFirst()) |evt| {
         try lua.pushAny("cast");
         const valType = lua.getTable(-2);
         if (valType != LuaType.function) {
             return error.UncastableSpell;
         }
-        v = e.data;
+
+        event = evt.*;
         try lua.pushAny(event.data);
         lua.protectedCall(.{ .args = 1, .results = 1 }) catch |err| {
             return try explainError(err, lua, spell);
@@ -100,8 +94,8 @@ fn cast_spell(alloc: std.mem.Allocator, spell: Spell) !void {
             return try explainError(err, lua, spell);
         };
         lua.pop(1);
-        std.debug.print("Casted {s}: CounterEvent.counter is {d}\n", .{ spell.name, v.counter });
 
+        std.debug.print("Casted {s}: CounterEvent.counter is {d}\n", .{ spell.name, v.counter });
         i += 1;
         event.data = v;
         queue.append(&event);
