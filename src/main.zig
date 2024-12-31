@@ -5,31 +5,18 @@ const sanctum = @import("libsanctum");
 const Lua = ziglua.Lua;
 const LuaType = ziglua.LuaType;
 
-const debug_verbose = false;
-
-const spell_name: []const u8 = "spell_of_decrementing_counter";
-const spell: [:0]const u8 =
-    \\local spell_of_decrementing_counter = {
-    \\    cast = function(counter_event)
-    \\        if (counter_event["counter"] == nil) then
-    \\            return nil
-    \\        end
-    \\
-    \\        if (counter_event.counter == 0) then
-    \\            return nil
-    \\        end
-    \\
-    \\        counter_event["counter"] = counter_event["counter"] - 1
-    \\        return counter_event
-    \\    end,
-    \\    prepare = nil,
-    \\    unprepare = nil,
-    \\}
-    \\return spell_of_decrementing_counter
-;
-
 pub fn main() !void {
-    return main_internal() catch |e| {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const alloc = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    const selected_spell = blk: {
+        const args: [][:0]u8 = try std.process.argsAlloc(alloc);
+        defer std.process.argsFree(alloc, args);
+        break :blk try loadSpellOrDefault(args, default_spell);
+    };
+
+    return cast_spell(alloc, selected_spell) catch |e| {
         if (e == error.ExplainedExiting) {
             return;
         } else {
@@ -38,15 +25,39 @@ pub fn main() !void {
     };
 }
 
-fn main_internal() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+const Spell = struct {
+    name: []const u8,
+    lua: [:0]const u8,
+};
 
-    const CounterEnergy = struct {
+const default_spell = Spell{
+    .name = "counter_decrementing_spell",
+    .lua =
+    \\local counter_decrementing_spell = {
+    \\    cast = function(counter_event)
+    \\        if (counter_event.counter == 0) then
+    \\            return nil
+    \\        end
+    \\
+    \\        counter_event.counter = counter_event.counter - 1
+    \\        return counter_event
+    \\    end,
+    \\}
+    \\return counter_decrementing_spell
+    ,
+};
+
+fn loadSpellOrDefault(args: [][:0]u8, default: Spell) !Spell {
+    // TODO: Load from file based on specified arguments.
+    _ = args;
+    return default;
+}
+
+fn cast_spell(alloc: std.mem.Allocator, spell: Spell) !void {
+    const CounterEvent = struct {
         counter: u32,
     };
-    const L = std.DoublyLinkedList(CounterEnergy);
+    const L = std.DoublyLinkedList(CounterEvent);
 
     var event = L.Node{
         .data = .{ .counter = 10 },
@@ -54,14 +65,14 @@ fn main_internal() !void {
     var queue = L{};
     queue.append(&event);
 
-    var lua = try Lua.init(allocator);
+    var lua = try Lua.init(alloc);
     defer lua.deinit();
-    lua.doString(spell) catch |e| {
-        return try explainError(e, lua);
+    lua.doString(spell.lua) catch |e| {
+        return try explainError(e, lua, spell);
     };
 
     var i: usize = 0;
-    var v: CounterEnergy = undefined;
+    var v: CounterEvent = undefined;
     while (queue.popFirst()) |e| {
         // Seems like loading the module does not put the table members in the global namespace, that makes sense.
         // I guess the top of the stack is the table itself.
@@ -78,18 +89,18 @@ fn main_internal() !void {
         v = e.data;
         try lua.pushAny(event.data);
         lua.protectedCall(.{ .args = 1, .results = 1 }) catch |err| {
-            return try explainError(err, lua);
+            return try explainError(err, lua, spell);
         };
 
         if (lua.isNil(-1)) {
             // explicit stop condition for now.
             break;
         }
-        v = lua.toAny(CounterEnergy, -1) catch |err| {
-            return try explainError(err, lua);
+        v = lua.toAny(CounterEvent, -1) catch |err| {
+            return try explainError(err, lua, spell);
         };
         lua.pop(1);
-        std.debug.print("Casted {s}: CounterEnergy.counter is {d}\n", .{ spell_name, v.counter });
+        std.debug.print("Casted {s}: CounterEvent.counter is {d}\n", .{ spell.name, v.counter });
 
         i += 1;
         event.data = v;
@@ -97,12 +108,12 @@ fn main_internal() !void {
     }
 }
 
-fn explainError(e: anytype, lua: *Lua) !void {
+fn explainError(e: anytype, lua: *Lua, spell: Spell) !void {
     if (e == error.LuaSyntax) {
-        try explainSyntaxError(lua);
+        try explainSyntaxError(lua, spell);
         return error.ExplainedExiting;
     } else if (e == error.LuaRuntime) {
-        try explainRuntimeError(lua);
+        try explainRuntimeError(lua, spell);
         return error.ExplainedExiting;
     } else {
         const err_text = try lua.toString(-1);
@@ -112,7 +123,7 @@ fn explainError(e: anytype, lua: *Lua) !void {
     return e;
 }
 
-fn explainRuntimeError(lua: *Lua) !void {
+fn explainRuntimeError(lua: *Lua, spell: Spell) !void {
     const err_text = try lua.toString(-1);
     var line: ?usize = null;
     if (std.mem.indexOf(u8, err_text, ":")) |first_colon| {
@@ -125,10 +136,10 @@ fn explainRuntimeError(lua: *Lua) !void {
         }
     }
     std.debug.print("\n", .{});
-    printSpellWithLineNumbers(spell, line, 1);
+    printSourceCodeContext(spell.lua, line, 1);
 }
 
-fn explainSyntaxError(lua: *Lua) !void {
+fn explainSyntaxError(lua: *Lua, spell: Spell) !void {
     var line: ?usize = null;
     std.debug.print("Spell contains Lua syntax error", .{});
     const err_text = try lua.toString(-1);
@@ -143,22 +154,22 @@ fn explainSyntaxError(lua: *Lua) !void {
         }
     }
     std.debug.print("\n", .{});
-    printSpellWithLineNumbers(spell, line, 1);
+    printSourceCodeContext(spell.lua, line, 1);
 }
 
-fn printSpellWithLineNumbers(source: [:0]const u8, target_line: ?usize, context_lines: usize) void {
+fn printSourceCodeContext(source: [:0]const u8, focus_line: ?usize, context_line_count: usize) void {
     var lines = std.mem.splitSequence(u8, source, "\n");
     var i: usize = 1;
     var end: usize = std.math.maxInt(usize);
-    if (target_line) |l| {
-        while (i < (l - context_lines)) {
+    if (focus_line) |l| {
+        while (i < (l - context_line_count)) {
             _ = lines.next();
             i += 1;
         }
-        end = l + context_lines;
+        end = l + context_line_count;
     }
     while (lines.next()) |line| {
-        if (target_line) |l2| {
+        if (focus_line) |l2| {
             if (i == l2) {
                 std.debug.print("---> | {s}\n", .{line});
             } else {

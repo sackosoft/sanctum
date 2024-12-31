@@ -19,7 +19,9 @@ For more detailed reference information and documentation, refer to the [`docuno
 Demonstrates event processing with Spells on a throw-away runtime. Runs on a single node (no networking, no persistence).
 
 - [ ] Docunomicon - Definition and example of Lua spells
-    - [ ] Documentation for spells in the runtime.
+    - [x] Minimal documentation for spells in the runtime.
+    - [ ] Detailed documentation for spells in the runtime.
+    - [ ] Exhaustive documentation for spells in the runtime.
 - [ ] Spell Casting
     - [ ] Spells can be loaded dynamically into the sanctum from files.
     - [x] Counting loop spell is added with a reusable regression test.
