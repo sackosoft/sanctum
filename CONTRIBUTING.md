@@ -5,6 +5,14 @@ doing development work on Sanctum. Currently, Sanctum is only being designed to 
 works on my Debian machine (the only current official target). I expect that it should would work on Windows with WSL; however,
 you may see build or runtime issues on Apple devices, or other Linux distributions; my apologies in advance.
 
+## Known issues for initial checkouts
+
+* The submodule for ziglua will not update since I've locally applied the commit from the [PR that fixes the issue][PRPATCH].
+
+[PRPATCH]: https://github.com/natecraddock/ziglua/pull/129/files#diff-b58bd57bffd66ccd9674cba77b2ed637e05603c6de3acbb7fa67f70969bccebc
+
+* `just build` does not work until after `zig build` has been run, since the output directory and files do not exist for a clean checkout.
+
 ## Dependencies and Tools
 
 Developers working on Sanctum will probably need to install these tools in order to run the normal development and testing workflow.
