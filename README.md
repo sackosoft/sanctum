@@ -16,14 +16,17 @@ For more detailed reference information and documentation, refer to the [`docuno
 
 ## v0.1 Proof of Concept - **Active**
 
-Demonstrates event processing with Spells on a throw-away runtime. Runs on a single node (no networking, no persistence).
+Demonstrates event processing with Spells on a throw-away runtime. Sanctum runs as a CLI application and
+covered by a suite of regression tests to enable building and refactoring the core engine. Runs on a
+single node (no networking, no persistence).
 
 - [ ] Docunomicon - Definition and example of Lua spells
     - [x] Minimal documentation for spells in the runtime.
     - [ ] Detailed documentation for spells in the runtime.
     - [ ] Exhaustive documentation for spells in the runtime.
 - [ ] Spell Casting
-    - [ ] Spells can be loaded dynamically into the sanctum from files.
+    - [x] Spells can be loaded dynamically into the sanctum from files.
+        - [ ] Spells are loaded and unloaded with the prepare and unprepare lifecycle hooks.
     - [x] Counting loop spell is added with a reusable regression test.
     - [x] Malformed spells (spell parse failure) are handled gracefully.
         - [x] Handle parsing failing line number from errors Lua message.

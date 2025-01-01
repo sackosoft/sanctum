@@ -5,6 +5,8 @@ const sanctum = @import("libsanctum");
 const Lua = ziglua.Lua;
 const LuaType = ziglua.LuaType;
 
+const MAX_SPELL_SIZE_BYTES: usize = 1024 * 512;
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const alloc = gpa.allocator();
@@ -13,8 +15,10 @@ pub fn main() !void {
     const selected_spell = blk: {
         const args: [][:0]u8 = try std.process.argsAlloc(alloc);
         defer std.process.argsFree(alloc, args);
-        break :blk try loadSpellOrDefault(args, default_spell);
+        break :blk try loadSpell(alloc, args);
     };
+    defer alloc.free(selected_spell.name);
+    defer alloc.free(selected_spell.lua);
 
     return cast_spell(alloc, selected_spell) catch |e| {
         if (e == error.ExplainedExiting) {
@@ -30,27 +34,39 @@ const Spell = struct {
     lua: [:0]const u8,
 };
 
-const default_spell = Spell{
-    .name = "counter_decrementing_spell",
-    .lua =
-    \\local counter_decrementing_spell = {
-    \\    cast = function(counter_event)
-    \\        if (counter_event.counter == 0) then
-    \\            return nil
-    \\        end
-    \\
-    \\        counter_event.counter = counter_event.counter - 1
-    \\        return counter_event
-    \\    end,
-    \\}
-    \\return counter_decrementing_spell
-    ,
-};
+fn printExpectedUsage() void {
+    std.debug.print("Usage: `sanctum cast <path_to_spell>`\n", .{});
+}
 
-fn loadSpellOrDefault(args: [][:0]u8, default: Spell) !Spell {
-    // TODO: Load from file based on specified arguments.
-    _ = args;
-    return default;
+fn loadSpell(alloc: std.mem.Allocator, args: [][:0]u8) !Spell {
+    if (args.len != 3) {
+        std.debug.print("Expected two commandline arguments, but found {d}.\n", .{args.len});
+        printExpectedUsage();
+        return error.InvalidArguments;
+    }
+
+    const command = args[1];
+    if (!std.mem.eql(u8, "cast", command)) {
+        std.debug.print("Unrecognized command '{s}', expected one of ['cast']\n", .{command});
+        printExpectedUsage();
+        return error.InvalidArguments;
+    }
+
+    const path = args[2];
+    const dir = std.fs.cwd();
+    var f = dir.openFile(path, .{}) catch |e| {
+        std.debug.print("Unable to open spell file '{s}'\n", .{path});
+        return e;
+    };
+    defer f.close();
+
+    const start_of_file_name = std.mem.lastIndexOfAny(u8, path, "/");
+    const name: []const u8 = try alloc.dupe(u8, (if (start_of_file_name) |s| path[(s + 1)..] else path));
+    const spell: [:0]const u8 = try f.readToEndAllocOptions(alloc, MAX_SPELL_SIZE_BYTES, null, 1, 0);
+    return Spell{
+        .name = name,
+        .lua = spell,
+    };
 }
 
 fn cast_spell(alloc: std.mem.Allocator, spell: Spell) !void {

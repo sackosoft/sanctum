@@ -25,10 +25,9 @@ if __name__ == "__main__":
     for p in suite.glob("*.assert"):
         expected = p.read_text()
         spell = p.with_suffix(".spell.lua")
-        # Today, the executable does not read any arguments, so this doesn't matter right now. We can add that support later.
-        command = [exe, "--spell-file", spell]
+        command = [exe, "cast", str(spell.resolve())]
 
-        result = subprocess.run(command, capture_output=True, check=True)
+        result = subprocess.run(command, capture_output=True)
         if result.returncode != 0:
             print(f"FAIL: Exited with non-zero exit code {result.returncode}")
             print("stdout:")
@@ -37,7 +36,15 @@ if __name__ == "__main__":
             print(textwrap.indent(result.stderr.decode("utf-8"), '  '))
             exit(1)
 
-        actual = result.stderr.decode("utf-8")
+        try:
+            actual = result.stderr.decode("utf-8")
+        except UnicodeDecodeError:
+            actual = str(result.stderr)
+            print("FAIL: Unable to decode test run output")
+            print("stderr:")
+            print(actual)
+            exit(1)
+
         diff = [l for l in difflib.unified_diff(expected, actual)]
         if len(diff) != 0:
             print("FAIL: Output does not match expected")
