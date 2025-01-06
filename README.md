@@ -29,7 +29,7 @@ single node (no networking, no persistence).
         - [ ] Spells are loaded and unloaded with the prepare and unprepare lifecycle hooks.
     - [x] Counting loop spell is added with a reusable regression test.
         - [x] Many reusable regression tests can be defined.
-        - [ ] Regression tests are fully self-contained. Seed events, the initial event loop event,
+        - [x] Regression tests are fully self-contained. Seed events, the initial event loop event,
               can be specified in Lua and loaded by the runtime.
     - [x] Malformed spells (spell parse failure) are handled gracefully.
         - [x] Handle parsing failing line number from errors Lua message.
