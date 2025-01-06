@@ -105,31 +105,51 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
     lua.openBase();
     lua.openString();
 
+    // The spell is a table that sits on the bottom of the stack. At present, it should never
+    // be mutated and it should never move on the stack. Calls to functions inside this table
+    // are made in order to "prepare" and "cast" the spell.
     try checkedDoString(lua, command.spell.lua);
 
-    try lua.pushAny("cast");
-    var valType = lua.getTable(-2);
-    if (valType != LuaType.function) {
-        std.debug.print("Expected to find function on stack (-3) before submitting a protected call, however, it was a {s} instead\n", .{@tagName(valType)});
-        return error.UncastableSpell;
-    }
-
+    // The seed event is placed on top of the stack to prepare for execution. I believe this is
+    // temporary, for the POC-phase of the project, and will eventually be replaced by an event
+    // [de]serialization layer with an event queues to pull events from.
     try checkedDoString(lua, command.event_seed_lua);
+    try prepareSpellCall(lua, "cast", 1);
 
     var i: usize = 0;
     while (!shouldStop(lua, i)) : (i += 1) {
         try checkedCall(lua, command);
+        try prepareSpellCall(lua, "cast", 1);
+    }
+}
 
-        // The return value from casting the spell is on top of the stack.
-        // We will push the cast function to the top of the stack on top of the return value, then insert it before the return value
-        // so that it is ready to be called again.
-        try lua.pushAny("cast");
-        valType = lua.getTable(-3);
-        if (valType != LuaType.function) {
-            std.debug.print("Expected to find function on stack (-3) before submitting a protected call, however, it was a {s} instead\n", .{@tagName(valType)});
-            return error.UncastableSpell;
-        }
-        lua.insert(-2);
+/// Used to setup the contents and order of elements on the stack before the cast function of a spell
+/// is invoked. If the argument(s) for the function call are already on the top of the stack, `stack_argc`
+/// should be set to the number of arguments on top. This allows for the stack to be reordered appropriately,
+/// and the protected call can be issued after `prepareSpellCall` returns. If no arguments for the function call
+/// are already on the stack, `stack_argc` should be set to `0`. In this case, it is the responsibility of the
+/// caller to push the arguments to the function onto the stack after `prepareSpellCall` returns.
+fn prepareSpellCall(lua: *Lua, function_name: []const u8, stack_argc: u8) !void {
+    try lua.pushAny(function_name);
+
+    // TODO: I believe the spell is always at the bottom of the stack. Is it possible and/or is it more
+    // simple to always index from the bottom rather than a relative offset from the top?
+    const table_index = @as(i32, -2) - @as(i32, @intCast(stack_argc));
+
+    const valType = lua.getTable(table_index);
+    if (valType != LuaType.function) {
+        std.debug.print(
+            "Error: Preparing to call '{s}()'; expected to find the spell containing that function on the stack at ({d}); however, a {s} was found instead.\n",
+            .{ function_name, table_index, @tagName(valType) },
+        );
+        return error.UncastableSpell;
+    }
+
+    if (stack_argc != 0) {
+        // We need to move the `function` element on the stack below all the arguments in order to be ready to
+        // call the function immediately upon return. If no args are on the stack, no problem, just return.
+        const insert_index = @as(i32, -1) - @as(i32, @intCast(stack_argc));
+        lua.insert(insert_index);
     }
 }
 
