@@ -1,6 +1,6 @@
 local decrement_counter = {
     cast = function(counter_event)
-        if (counter_event.counter == 0) then
+        if counter_event.counter == 0 then
             return nil
         end
 

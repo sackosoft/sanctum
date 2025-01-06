@@ -39,8 +39,8 @@ fn printExpectedUsage() void {
 }
 
 fn loadSpell(alloc: std.mem.Allocator, args: [][:0]u8) !Spell {
-    if (args.len != 3) {
-        std.debug.print("Expected two commandline arguments, but found {d}.\n", .{args.len});
+    if (args.len < 3) {
+        std.debug.print("Expected at least two commandline arguments, but found {d}.\n", .{args.len});
         printExpectedUsage();
         return error.InvalidArguments;
     }

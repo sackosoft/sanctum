@@ -10,9 +10,9 @@ Welcome to the Docunomicon, the core user documentation for the Sanctum and its 
 
 *Spells harness ethereal streams of energy to manifest worldly changes or birth new magical energies for others to weave.*
 
-Spells are modules written in [Lua][LUA-LANG]. Spells are invoked with events from the event stream. A spell may use that as a trigger
-to perform an action, update internal state maintained for that spell, or produce new events for other spells to consume. Novice sorcerers
-should refer to the [5.4 version of the Tome of Lua Wisdom][LUA-MANUAL].
+Spells are modules written in [Lua][LUA-LANG]. Spells are invoked with events from the event stream. A spell may act upon an event
+to perform an action, update internal state maintained by that spell, or produce new events as output for other spells to consume.
+Novice sorcerers should refer to the [Tome of Lua 5.4 Wisdom][LUA-MANUAL].
 
 [LUA-LANG]: https://www.lua.org/download.html
 [LUA-MANUAL]: https://www.lua.org/manual/5.4/manual.html

@@ -28,10 +28,14 @@ single node (no networking, no persistence).
     - [x] Spells can be loaded dynamically into the sanctum from files.
         - [ ] Spells are loaded and unloaded with the prepare and unprepare lifecycle hooks.
     - [x] Counting loop spell is added with a reusable regression test.
+        - [x] Many reusable regression tests can be defined.
+        - [ ] Regression tests are fully self-contained. Seed events, the initial event loop event,
+              can be specified in Lua and loaded by the runtime.
     - [x] Malformed spells (spell parse failure) are handled gracefully.
         - [x] Handle parsing failing line number from errors Lua message.
     - [x] Unstable magic (internal spell failures) is handled gracefully.
     - [ ] Spells can consume magical energy (events).
+        - [ ] Magical energies are always internally stored as MessagePack buffers.
     - [ ] Spells can produce magical energy or act as a terminal action, producing nothing.
 
 ## v0.2 Prototype - Pending
