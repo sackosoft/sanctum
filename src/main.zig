@@ -12,15 +12,20 @@ pub fn main() !void {
     const alloc = gpa.allocator();
     defer _ = gpa.deinit();
 
-    const selected_spell = blk: {
+    const run_command_args = blk: {
         const args: [][:0]u8 = try std.process.argsAlloc(alloc);
         defer std.process.argsFree(alloc, args);
-        break :blk try loadSpell(alloc, args);
-    };
-    defer alloc.free(selected_spell.name);
-    defer alloc.free(selected_spell.lua);
 
-    return cast_spell(alloc, selected_spell) catch |e| {
+        break :blk RunCommandArgs{
+            .spell = try loadSpell(alloc, args),
+            .event_seed_lua = try loadEventSeed(alloc, args),
+        };
+    };
+    defer alloc.free(run_command_args.spell.name);
+    defer alloc.free(run_command_args.spell.lua);
+    defer alloc.free(run_command_args.event_seed_lua);
+
+    return runCommand(alloc, run_command_args) catch |e| {
         if (e == error.ExplainedExiting) {
             return;
         } else {
@@ -28,6 +33,11 @@ pub fn main() !void {
         }
     };
 }
+
+const RunCommandArgs = struct {
+    spell: Spell,
+    event_seed_lua: [:0]const u8,
+};
 
 const Spell = struct {
     name: []const u8,
@@ -69,7 +79,26 @@ fn loadSpell(alloc: std.mem.Allocator, args: [][:0]u8) !Spell {
     };
 }
 
-fn cast_spell(alloc: std.mem.Allocator, spell: Spell) !void {
+fn loadEventSeed(alloc: std.mem.Allocator, args: [][:0]u8) ![:0]const u8 {
+    for (0..args.len - 1) |i| {
+        if (std.mem.eql(u8, "--seed", args[i])) {
+            const path = args[i + 1];
+            const dir = std.fs.cwd();
+
+            var f = dir.openFile(path, .{}) catch |e| {
+                std.debug.print("Unable to open seed event file '{s}'\n", .{path});
+                return e;
+            };
+            defer f.close();
+
+            return try f.readToEndAllocOptions(alloc, MAX_SPELL_SIZE_BYTES, null, 1, 0);
+        }
+    }
+
+    std.debug.print("Expected to find '--seed <path_to_event_seed_file>' arguments, but they were not found.\n", .{});
+    return error.InvalidArguments;
+}
+fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
     const CounterEvent = struct {
         counter: u32,
     };
@@ -83,11 +112,10 @@ fn cast_spell(alloc: std.mem.Allocator, spell: Spell) !void {
 
     var lua = try Lua.init(alloc);
     defer lua.deinit();
-    lua.doString(spell.lua) catch |e| {
-        return try explainError(e, lua, spell);
+    lua.doString(command.spell.lua) catch |e| {
+        return try explainError(e, lua, command.spell);
     };
 
-    var i: usize = 0;
     var v: CounterEvent = undefined;
     while (queue.popFirst()) |evt| {
         try lua.pushAny("cast");
@@ -99,7 +127,7 @@ fn cast_spell(alloc: std.mem.Allocator, spell: Spell) !void {
         event = evt.*;
         try lua.pushAny(event.data);
         lua.protectedCall(.{ .args = 1, .results = 1 }) catch |err| {
-            return try explainError(err, lua, spell);
+            return try explainError(err, lua, command.spell);
         };
 
         if (lua.isNil(-1)) {
@@ -107,12 +135,11 @@ fn cast_spell(alloc: std.mem.Allocator, spell: Spell) !void {
             break;
         }
         v = lua.toAny(CounterEvent, -1) catch |err| {
-            return try explainError(err, lua, spell);
+            return try explainError(err, lua, command.spell);
         };
         lua.pop(1);
 
-        std.debug.print("Casted {s}: CounterEvent.counter is {d}\n", .{ spell.name, v.counter });
-        i += 1;
+        std.debug.print("Casted {s}: CounterEvent.counter is {d}\n", .{ command.spell.name, v.counter });
         event.data = v;
         queue.append(&event);
     }
