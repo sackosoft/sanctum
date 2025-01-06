@@ -6,6 +6,9 @@ import textwrap
 from pathlib import Path
 from sys import argv
 
+FAILED = 1
+SUCCESS = 0
+
 class TestFiles:
     EVENT_SEED = "seed.lua"
     SPELL = "spell.lua"
@@ -20,7 +23,7 @@ def try_decode_utf8(std_x: bytes) -> str:
         print(str(std_x))
         exit(1)
 
-def assert_results_mach_expected(expected: str, actual_bytes: bytes):
+def assert_results_mach_expected(expected: str, actual_bytes: bytes) -> int:
     actual = try_decode_utf8(actual_bytes)
 
     diff = [l for l in difflib.unified_diff(expected, actual)]
@@ -34,7 +37,9 @@ def assert_results_mach_expected(expected: str, actual_bytes: bytes):
         print("Actual:")
         print(textwrap.indent(actual, ' ? | '))
         print()
-        exit(1)
+        return FAILED
+    else:
+        return SUCCESS
 
 def try_run_process(command: list):
     result = subprocess.run(command, capture_output=True)
@@ -44,8 +49,9 @@ def try_run_process(command: list):
         print(textwrap.indent(result.stdout.decode("utf-8"), '  '))
         print("stderr:")
         print(textwrap.indent(result.stderr.decode("utf-8"), '  '))
-        exit(1)
-    return result
+        return (FAILED, result)
+    else:
+        return (SUCCESS, result)
 
 def _assert_outputs(test_dir_path, result):
     """
@@ -53,6 +59,7 @@ def _assert_outputs(test_dir_path, result):
     and compares them against the actual output from the program. If the expected output
     does not match the actual output, the program is halted with an error: a test case failed.
     """
+    outcome = 0
     assertion_files = [
         (TestFiles.STDOUT, result.stdout),
         (TestFiles.STDERR, result.stderr),
@@ -61,7 +68,8 @@ def _assert_outputs(test_dir_path, result):
         assert_file = t / assert_file_name
         if assert_file.is_file():
             expected = assert_file.read_text()
-            assert_results_mach_expected(expected, actual_bytes)
+            outcome += assert_results_mach_expected(expected, actual_bytes)
+    return outcome
 
 def _freeze_outputs(test_dir_path, result):
     """
@@ -79,6 +87,7 @@ def _freeze_outputs(test_dir_path, result):
 
         assert_file = t / assert_file_name
         assert_file.write_text(actual)
+    return SUCCESS
 
 TEST_ACTIONS = {
     "--test": _assert_outputs,
@@ -101,16 +110,28 @@ if __name__ == "__main__":
         print(f"Invalid test suite: '{argv[2]}', expected a path to a directory.")
         exit(1)
 
+    attempts = 0
+    failures = 0
+
     tests = [Path(directory[0]) for directory in os.walk(str(test_suite_dir.resolve())) if TestFiles.SPELL in directory[2]]
     for t in tests:
+        attempts += 1
         print(f"Running regression {action_arg.replace('-', '')} on '{t}'")
         event_seed = t / TestFiles.EVENT_SEED
         spell = t / TestFiles.SPELL
         command = [exe, "cast", str(spell.resolve()), "--seed", str(event_seed.resolve())]
 
-        result = try_run_process(command)
-        test_action = TEST_ACTIONS[action_arg]
-        test_action(t, result)
+        (outcome, result) = try_run_process(command)
+        if outcome != SUCCESS:
+            failures += FAILED
+            continue
+        else:
+            test_action = TEST_ACTIONS[action_arg]
+            failures += test_action(t, result)
 
-    print("PASS")
-    exit(0)
+    if failures == 0:
+        print("PASS")
+        exit(0)
+    else:
+        print(f"FAILED {failures} / {attempts} tests")
+        exit(1)

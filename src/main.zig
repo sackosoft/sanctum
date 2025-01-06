@@ -98,17 +98,22 @@ fn loadEventSeed(alloc: std.mem.Allocator, args: [][:0]u8) ![:0]const u8 {
     std.debug.print("Expected to find '--seed <path_to_event_seed_file>' arguments, but they were not found.\n", .{});
     return error.InvalidArguments;
 }
+
 fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
     var lua = try Lua.init(alloc);
     defer lua.deinit();
 
+    // Allows for `print()`, among other things
     lua.openBase();
+
+    // Allows for `string.format()`, among other things.
     lua.openString();
 
     // The spell is a table that sits on the bottom of the stack. At present, it should never
     // be mutated and it should never move on the stack. Calls to functions inside this table
     // are made in order to "prepare" and "cast" the spell.
     try checkedDoString(lua, command.spell.lua);
+    try validateSpell(lua, command);
 
     // The seed event is placed on top of the stack to prepare for execution. I believe this is
     // temporary, for the POC-phase of the project, and will eventually be replaced by an event
@@ -120,6 +125,32 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
     while (!shouldStop(lua, i)) : (i += 1) {
         try checkedCall(lua, command);
         try prepareSpellCall(lua, "cast", 1);
+    }
+}
+
+fn validateSpell(lua: *Lua, command: RunCommandArgs) !void {
+    const spellType = lua.typeOf(-1);
+    if (spellType != LuaType.table) {
+        std.debug.print(
+            "Error: Malformed spell. Expected lua spell to return a table, but it was a {s} instead.\n",
+            .{@tagName(spellType)},
+        );
+        printSourceCodeContext(command.spell.lua, null, 0);
+        return error.ExplainedExiting;
+    }
+
+    try lua.pushAny("cast");
+    const castType = lua.getTable(-1);
+    if (castType == LuaType.nil) {
+        std.debug.print("Error: Malformed spell. Expected lua spell contain function 'cast()', but it does not exist.\n", .{});
+        return error.ExplainedExiting;
+    } else if (castType != LuaType.function) {
+        std.debug.print(
+            "Error: Malformed spell. Expected lua spell to define a function named 'cast', but it is defined as a {s} instead.\n",
+            .{@tagName(castType)},
+        );
+        printSourceCodeContext(command.spell.lua, null, 0);
+        return error.ExplainedExiting;
     }
 }
 
