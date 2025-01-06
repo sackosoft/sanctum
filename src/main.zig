@@ -27,7 +27,7 @@ pub fn main() !void {
 
     return runCommand(alloc, run_command_args) catch |e| {
         if (e == error.ExplainedExiting) {
-            return;
+            std.process.exit(1);
         } else {
             return e;
         }
@@ -45,7 +45,7 @@ const Spell = struct {
 };
 
 fn printExpectedUsage() void {
-    std.debug.print("Usage: `sanctum cast <path_to_spell>`\n", .{});
+    std.debug.print("Usage: `sanctum cast <path_to_spell> --seed <path_to_seed_file>`\n", .{});
 }
 
 fn loadSpell(alloc: std.mem.Allocator, args: [][:0]u8) !Spell {
@@ -99,58 +99,64 @@ fn loadEventSeed(alloc: std.mem.Allocator, args: [][:0]u8) ![:0]const u8 {
     return error.InvalidArguments;
 }
 fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
-    const CounterEvent = struct {
-        counter: u32,
-    };
-    const L = std.DoublyLinkedList(CounterEvent);
-
-    var event = L.Node{
-        .data = .{ .counter = 10 },
-    };
-    var queue = L{};
-    queue.append(&event);
-
     var lua = try Lua.init(alloc);
     defer lua.deinit();
-    lua.doString(command.spell.lua) catch |e| {
-        return try explainError(e, lua, command.spell);
-    };
 
-    var v: CounterEvent = undefined;
-    while (queue.popFirst()) |evt| {
+    lua.openBase();
+    lua.openString();
+
+    try checkedDoString(lua, command.spell.lua);
+
+    try lua.pushAny("cast");
+    var valType = lua.getTable(-2);
+    if (valType != LuaType.function) {
+        std.debug.print("Expected to find function on stack (-3) before submitting a protected call, however, it was a {s} instead\n", .{@tagName(valType)});
+        return error.UncastableSpell;
+    }
+
+    try checkedDoString(lua, command.event_seed_lua);
+
+    var i: usize = 0;
+    while (!shouldStop(lua, i)) : (i += 1) {
+        try checkedCall(lua, command);
+
+        // The return value from casting the spell is on top of the stack.
+        // We will push the cast function to the top of the stack on top of the return value, then insert it before the return value
+        // so that it is ready to be called again.
         try lua.pushAny("cast");
-        const valType = lua.getTable(-2);
+        valType = lua.getTable(-3);
         if (valType != LuaType.function) {
+            std.debug.print("Expected to find function on stack (-3) before submitting a protected call, however, it was a {s} instead\n", .{@tagName(valType)});
             return error.UncastableSpell;
         }
-
-        event = evt.*;
-        try lua.pushAny(event.data);
-        lua.protectedCall(.{ .args = 1, .results = 1 }) catch |err| {
-            return try explainError(err, lua, command.spell);
-        };
-
-        if (lua.isNil(-1)) {
-            // explicit stop condition for now.
-            break;
-        }
-        v = lua.toAny(CounterEvent, -1) catch |err| {
-            return try explainError(err, lua, command.spell);
-        };
-        lua.pop(1);
-
-        std.debug.print("Casted {s}: CounterEvent.counter is {d}\n", .{ command.spell.name, v.counter });
-        event.data = v;
-        queue.append(&event);
+        lua.insert(-2);
     }
 }
 
-fn explainError(e: anytype, lua: *Lua, spell: Spell) !void {
+fn shouldStop(lua: *Lua, i: usize) bool {
+    // For now, it is an explicit stop condition when the spell returns `nil` instead of producing a new event.
+    // Additionally, we will forcefully bound execution to 1000 iterations for now, to prevent runaway execution.
+    return lua.isNil(-1) or i > 1_000;
+}
+
+fn checkedDoString(lua: *Lua, source: [:0]const u8) !void {
+    lua.doString(source) catch |e| {
+        return try explainError(e, lua, source);
+    };
+}
+
+fn checkedCall(lua: *Lua, command: RunCommandArgs) !void {
+    lua.protectedCall(.{ .args = 1, .results = 1 }) catch |err| {
+        return try explainError(err, lua, command.spell.lua);
+    };
+}
+
+fn explainError(e: anytype, lua: *Lua, source: [:0]const u8) !void {
     if (e == error.LuaSyntax) {
-        try explainSyntaxError(lua, spell);
+        try explainSyntaxError(lua, source);
         return error.ExplainedExiting;
     } else if (e == error.LuaRuntime) {
-        try explainRuntimeError(lua, spell);
+        try explainRuntimeError(lua, source);
         return error.ExplainedExiting;
     } else {
         const err_text = try lua.toString(-1);
@@ -160,7 +166,7 @@ fn explainError(e: anytype, lua: *Lua, spell: Spell) !void {
     return e;
 }
 
-fn explainRuntimeError(lua: *Lua, spell: Spell) !void {
+fn explainRuntimeError(lua: *Lua, source: [:0]const u8) !void {
     const err_text = try lua.toString(-1);
     var line: ?usize = null;
     if (std.mem.indexOf(u8, err_text, ":")) |first_colon| {
@@ -169,14 +175,15 @@ fn explainRuntimeError(lua: *Lua, spell: Spell) !void {
             const error_message_text = err_text[first_colon + 1 + second_colon ..];
 
             line = try std.fmt.parseInt(usize, line_number_text, 10);
-            std.debug.print("Runtime error in spell on line {s}: {s}", .{ line_number_text, error_message_text });
+            std.debug.print("Runtime error in spell on line {s}: {s}\n", .{ line_number_text, error_message_text });
         }
+    } else {
+        std.debug.print("{s}\n", .{err_text});
     }
-    std.debug.print("\n", .{});
-    printSourceCodeContext(spell.lua, line, 1);
+    printSourceCodeContext(source, line, 1);
 }
 
-fn explainSyntaxError(lua: *Lua, spell: Spell) !void {
+fn explainSyntaxError(lua: *Lua, source: [:0]const u8) !void {
     var line: ?usize = null;
     std.debug.print("Spell contains Lua syntax error", .{});
     const err_text = try lua.toString(-1);
@@ -185,13 +192,14 @@ fn explainSyntaxError(lua: *Lua, spell: Spell) !void {
         if (std.mem.indexOf(u8, err_text[first_colon + 1 ..], ":")) |second_colon| {
             const line_number_text = err_text[first_colon + 1 .. first_colon + 1 + second_colon];
             const error_message_text = err_text[first_colon + 1 + second_colon ..];
-            std.debug.print(" on line {s}{s}", .{ line_number_text, error_message_text });
+            std.debug.print(" on line {s}{s}\n", .{ line_number_text, error_message_text });
             line = try std.fmt.parseInt(usize, line_number_text, 10);
             parsed = true;
         }
+    } else {
+        std.debug.print("{s}\n", .{err_text});
     }
-    std.debug.print("\n", .{});
-    printSourceCodeContext(spell.lua, line, 1);
+    printSourceCodeContext(source, line, 1);
 }
 
 fn printSourceCodeContext(source: [:0]const u8, focus_line: ?usize, context_line_count: usize) void {

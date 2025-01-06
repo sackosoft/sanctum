@@ -7,7 +7,7 @@ from pathlib import Path
 from sys import argv
 
 class TestFiles:
-    EVENT_SEED = "eventseed.lua"
+    EVENT_SEED = "seed.lua"
     SPELL = "spell.lua"
     STDOUT = "stdout.assert"
     STDERR = "stderr.assert"
