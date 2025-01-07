@@ -1,9 +1,12 @@
 const std = @import("std");
 const ziglua = @import("ziglua");
 const sanctum = @import("libsanctum");
+const zlmp = @import("libzlmp");
 
 const Lua = ziglua.Lua;
 const LuaType = ziglua.LuaType;
+const LuaInteger = ziglua.Integer;
+const LuaNumber = ziglua.Number;
 
 const MAX_SPELL_SIZE_BYTES: usize = 1024 * 512;
 
@@ -121,6 +124,17 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
     try checkedDoString(lua, command.event_seed_lua);
     try prepareSpellCall(lua, "cast", 1);
 
+    // Temporary: Do a round trip serialization.
+    try guardTypeAt(lua, LuaType.table, -1);
+    const event: zlmp.MessagePackBuffer = try zlmp.toMessagePack(lua, -1, alloc);
+    defer alloc.free(event.message);
+
+    // var buf: [8192]u8 = undefined;
+    // const b64 = std.base64.standard.Encoder.encode(&buf, event.message);
+    // std.debug.print("https://msgpack.dbrgn.ch/#base64={s}\n", .{b64});
+    // lua.pop(1);
+    // try zlmp.pushMessagePack(lua, event);
+
     var i: usize = 0;
     while (!shouldStop(lua, i)) : (i += 1) {
         try checkedCall(lua, command);
@@ -202,6 +216,14 @@ fn checkedCall(lua: *Lua, command: RunCommandArgs) !void {
     lua.protectedCall(.{ .args = 1, .results = 1 }) catch |err| {
         return try explainError(err, lua, command.spell.lua);
     };
+}
+
+fn guardTypeAt(lua: *Lua, expected_type: LuaType, offset: i32) !void {
+    const actual_type = lua.typeOf(offset);
+    if (expected_type != actual_type) {
+        std.debug.print("[Guard] Expected to find a '{s}' on the stack at ({d}) but found a '{s}' instead.\n", .{ @tagName(expected_type), offset, @tagName(actual_type) });
+        return error.GuardFail;
+    }
 }
 
 fn explainError(e: anytype, lua: *Lua, source: [:0]const u8) !void {
