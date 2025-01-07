@@ -159,11 +159,7 @@ fn packInto(lua: *Lua, al: *ArrayList(u8), index: i32) !void {
             try packStringInto(&writer, try lua.toString(index));
         },
         .table => {
-            // Refer to https://www.lua.org/manual/5.4/manual.html#lua_next for table iteration pattern.
-            lua.pushNil();
-            while (lua.next(index - 1)) {
-                lua.pop(1);
-            }
+            try packMapInto(al, &writer, lua, index);
         },
 
         // All non-data types will be ignored by design. These types cannot be serialized to the
@@ -174,6 +170,50 @@ fn packInto(lua: *Lua, al: *ArrayList(u8), index: i32) !void {
         // be platform-provided and not meaningful to any user-controlled data object.
         .userdata, .light_userdata => {},
     }
+}
+
+/// Used to encode the table at the given index on the stack into a MessagePack map object
+/// in the message pack buffer.
+///
+/// NOTE: Only currently supports the map32 format because I want to avoid figuring out
+/// how to efficiently count the number of elements in the map while serializing. This ought
+/// to be updated to support the fixmap and map16 formats, since tables will usually be in
+/// those size constraints.
+///
+/// For more information, refer to the Message Pack Specification for the int format family:
+/// https://github.com/msgpack/msgpack/blob/master/spec.md#map-format-family
+fn packMapInto(al: *ArrayList(u8), writer: *ArrayList(u8).Writer, lua: *Lua, index: i32) !void {
+    try writer.writeByte(@intFromEnum(Protocol.Tags.Map32));
+
+    // Index of the first byte of the placeholder value for `N`.
+    // We cannot grab the pointer to this location here, since the array list may resize
+    // and reallocate the buffer while we write the key value pairs into it. Instead,
+    // the offset of this u32 in the buffer can be saved, and we can update the memory
+    // with that stable offset later.
+    const placeholder_location = al.capacity;
+
+    // We are going to "come back" to setting `N` in the serialized output after
+    // writing the `N*2` objects. At that point we will know the value of `N`.
+    // For now, we will write a placeholder value and keep track of the location
+    // where this information will need to be set later.
+    // +-----+--------+--------+--------+--------+--------+~~~~~~~~~~~~~~~~~+
+    // | ... |  0xdf  |11111111|11111111|11111111|11111111|   N*2 objects   |
+    // +-----+--------+--------+--------+--------+--------+~~~~~~~~~~~~~~~~~+
+    //                 ^
+    //                 | placeholder_location
+    const placeholder = 0xFFFFFFFF;
+    try writer.writeInt(u32, placeholder, .big);
+
+    // Message Pack protocol's `N` - representing the number of key value pairs in the map.
+    var n: u32 = 0;
+
+    lua.pushNil(); // Refer to https://www.lua.org/manual/5.4/manual.html#lua_next for table iteration pattern.
+    while (lua.next(index - 1)) : (n += 1) {
+        lua.pop(1);
+    }
+
+    const n_slot: *[4]u8 = @ptrCast(&al.items[placeholder_location]);
+    std.mem.writeInt(u32, n_slot, n, .big);
 }
 
 /// Used to encode the given integer value into the smallest capable MessagePack integer type
