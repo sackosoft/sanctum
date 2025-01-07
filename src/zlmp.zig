@@ -9,7 +9,7 @@ const LuaInteger = ziglua.Integer;
 const LuaNumber = ziglua.Number;
 
 const Protocol = struct {
-    const Tag = enum(u8) {
+    const Tags = enum(u8) {
         // Positive fixint range (0 to 127)
         PositiveFixintMin = 0x00,
         PositiveFixintMax = 0x7f,
@@ -139,10 +139,52 @@ fn packInto(lua: *Lua, al: *ArrayList(u8), index: i32) !void {
     var writer = al.writer();
     switch (lua.typeOf(index)) {
         .nil => {
-            try writer.writeByte(0xc0);
+            try writer.writeByte(@intFromEnum(Protocol.Tags.Nil));
         },
-        .boolean => {},
-        .number => if (lua.isInteger(index)) {} else {},
+        .boolean => {
+            try writer.writeByte(@intFromEnum(Protocol.Tags.False) + @intFromBool(lua.toBoolean(index)));
+        },
+        .number => if (lua.isInteger(index)) {
+            // TODO: I'm assuming LuaInteger is i64, but I believe Lua can be compiled to
+            // target i32 and f32 number types. Not sure if I will ever use that (or a user
+            // would ever require it) but this may fail to compile if that ever happens.
+            const v: LuaInteger = try lua.toInteger(index);
+
+            // Encode the runtime value with the smallest capable MessagePack type to save on space.
+            switch (v) {
+                std.math.minInt(i64)...(std.math.minInt(i32) - 1) => {
+                    _ = Protocol.Tags.Int64;
+                },
+                std.math.minInt(i32)...(std.math.minInt(i16) - 1) => {
+                    _ = Protocol.Tags.Int32;
+                },
+                std.math.minInt(i16)...(std.math.minInt(i8) - 1) => {
+                    _ = Protocol.Tags.Int16;
+                },
+                std.math.minInt(i8)...(std.math.minInt(i6) - 1) => {
+                    _ = Protocol.Tags.Int8;
+                },
+                std.math.minInt(i6)...-1 => {
+                    const negativeFixedIntSlot: u8 = 0b11100000;
+                    const byte = negativeFixedIntSlot | @as(u5, @bitCast(@as(i5, @truncate(v))));
+                    try writer.writeByte(byte);
+                },
+                0...std.math.maxInt(i8) => {
+                    const positiveFixedIntMask: u8 = 0b01111111;
+                    const byte = positiveFixedIntMask & @as(u8, @bitCast(@as(i8, @truncate(v))));
+                    try writer.writeByte(byte);
+                },
+                (std.math.maxInt(i8) + 1)...std.math.maxInt(i16) => {
+                    _ = Protocol.Tags.Int16;
+                },
+                (std.math.maxInt(i16) + 1)...std.math.maxInt(i32) => {
+                    _ = Protocol.Tags.Int32;
+                },
+                (std.math.maxInt(i32) + 1)...std.math.maxInt(i64) => {
+                    _ = Protocol.Tags.Int64;
+                },
+            }
+        } else {},
         .string => {},
         .table => {
             // Refer to https://www.lua.org/manual/5.4/manual.html#lua_next for table iteration pattern.
