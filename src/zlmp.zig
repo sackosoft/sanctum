@@ -2,11 +2,76 @@ const std = @import("std");
 const ArrayList = std.ArrayList;
 
 const ziglua = @import("ziglua");
-
 const Lua = ziglua.Lua;
-const LuaType = ziglua.LuaType;
 const LuaInteger = ziglua.Integer;
 const LuaNumber = ziglua.Number;
+
+/// Returned by one of the `toMessagePack()` functions, contains a serialized version of a Lua VM value
+/// on the stack. Used to save a value to storage or transmit the value over the network, as necessary.
+/// The value can be placed back on a Lua VM stack with one of the `pushMessagePack()` functions.
+pub const MessagePackBuffer = struct {
+    /// A Message Pack formatted value that was serialized from a value on the Lua VM stack.
+    message: []const u8,
+};
+
+/// Serializes the value on the stack at the specified index to a binary representation
+/// using the Message Pack protocol. Uses the default options for serialization. The caller
+/// is responsible to free the memory allocated and returned.
+///
+/// For information about the Message Pack project, refer to https://msgpack.org/
+///
+/// For information about the Message Pack Specification, refer to https://github.com/msgpack/msgpack/blob/master/spec.md
+///
+/// * Pops: `0`
+/// * Pushes: `0`
+pub fn toMessagePack(lua: *Lua, index: i32, alloc: std.mem.Allocator) !MessagePackBuffer {
+    return toMessagePackOptions(lua, index, alloc, .{});
+}
+
+/// Serializes the value on the stack at the specified index to a binary representation
+/// using the Message Pack protocol. Uses the given options for serialization. The caller
+/// is responsible to free the memory allocated and returned.
+///
+/// For information about the Message Pack project, refer to https://msgpack.org/
+///
+/// For information about the Message Pack Specification, refer to https://github.com/msgpack/msgpack/blob/master/spec.md
+///
+/// * Pops: `0`
+/// * Pushes: `0`
+pub fn toMessagePackOptions(lua: *Lua, index: i32, alloc: std.mem.Allocator, options: ToMessagePackOptions) !MessagePackBuffer {
+    return toMessagePackOptionsInternal(lua, index, alloc, options);
+}
+
+pub fn pushMessagePack(lua: *Lua, event: MessagePackBuffer) !void {
+    _ = lua;
+    _ = event;
+}
+
+/// Controls how the serialization fucttions allocate memory when serializing lua values.
+pub const AllocationStrategy = enum(u8) {
+    /// When used, the value to be serialized will be traversed before serialization to determine
+    /// the space required for the serialied result. This option is best used when objects to be
+    /// serialized are known to be relatively small. This option prevents buffer resizing operations
+    /// at the cost of some pre-traversal compute time.
+    exact,
+
+    /// When used, the buffer containing the serialized output will be dynamically resized as
+    /// necessary while the serialization process fills the buffer with Message Pack formatted data.
+    /// This option is best used when when objects to be serialied are known to be relatively large.
+    /// This option should have the best performance for large objects where the buffer resizing
+    /// operations are ammortized and a majority of time is spent following the serialiation protocol.
+    realloc,
+};
+
+/// Used to control memory usage behavior of the serializer.
+pub const ToMessagePackOptions = struct {
+    /// When using the 'realloc' allocation strategy, the initial_capacity
+    /// determines the size of the first buffer allocated during serialization.
+    initial_capacity: u16 = 128,
+
+    /// Controls how zlmp allocates memory when serializing lua values.
+    allocation_strategy: AllocationStrategy = .exact,
+};
 
 const Protocol = struct {
     const Tags = enum(u8) {
@@ -66,51 +131,7 @@ const Protocol = struct {
     };
 };
 
-pub const MessagePackBuffer = struct {
-    message: []const u8,
-};
-
-pub fn pushMessagePack(lua: *Lua, event: MessagePackBuffer) !void {
-    _ = lua;
-    _ = event;
-}
-
-/// Controls how zlmp allocates memory when serializing lua values.
-pub const AllocationStrategy = enum(u8) {
-    /// zlmp will pre-traverse the value to calculate the required space before
-    /// beginning serialization. Optimal when objects to be serialized are known
-    /// ahead of time to be relatively small.
-    exact,
-    /// zlmp will allocate an average sized buffer and grow the buffer with calls
-    /// to realloc as necessary. Optimal when objects to be serialied are known
-    /// ahead of time to be relatively large.
-    realloc,
-};
-pub const ToMessagePackOptions = struct {
-    /// When using the 'realloc' allocation strategy, the initial_capacity
-    /// determines the size of the first buffer allocated during serialization.
-    initial_capacity: u16 = 1024,
-
-    /// Controls how zlmp allocates memory when serializing lua values.
-    allocation_strategy: AllocationStrategy = .exact,
-};
-
-pub fn toMessagePack(
-    lua: *Lua,
-    index: i32,
-    alloc: std.mem.Allocator,
-) !MessagePackBuffer {
-    return toMessagePackOptions(lua, index, alloc, .{});
-}
-
-/// Serializes the value on the stack at the specified index to a MessagePack message.
-/// For now, only lua tables may be serialized. An error will be returned if the stack
-/// does not contain a table at the specified index.
-///
-/// * Pops: `0`
-/// * Pushes: `0`
-/// * Errors: error.GuardFail - when the value at the specified index is not a table.
-pub fn toMessagePackOptions(
+inline fn toMessagePackOptionsInternal(
     lua: *Lua,
     index: i32,
     alloc: std.mem.Allocator,
