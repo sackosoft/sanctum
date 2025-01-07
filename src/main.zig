@@ -128,8 +128,12 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
     try guardTypeAt(lua, LuaType.table, -1);
     const event: zlmp.MessagePackBuffer = try zlmp.toMessagePack(lua, -1, alloc);
     defer alloc.free(event.message);
-    lua.pop(1);
-    try zlmp.pushMessagePack(lua, event);
+
+    // var buf: [8192]u8 = undefined;
+    // const b64 = std.base64.standard.Encoder.encode(&buf, event.message);
+    // std.debug.print("https://msgpack.dbrgn.ch/#base64={s}\n", .{b64});
+    // lua.pop(1);
+    // try zlmp.pushMessagePack(lua, event);
 
     var i: usize = 0;
     while (!shouldStop(lua, i)) : (i += 1) {

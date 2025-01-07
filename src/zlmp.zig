@@ -190,7 +190,7 @@ fn packMapInto(al: *ArrayList(u8), writer: *ArrayList(u8).Writer, lua: *Lua, ind
     // and reallocate the buffer while we write the key value pairs into it. Instead,
     // the offset of this u32 in the buffer can be saved, and we can update the memory
     // with that stable offset later.
-    const placeholder_location = al.capacity;
+    const placeholder_location = al.items.len;
 
     // We are going to "come back" to setting `N` in the serialized output after
     // writing the `N*2` objects. At that point we will know the value of `N`.
