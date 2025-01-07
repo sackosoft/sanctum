@@ -125,8 +125,9 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
     try prepareSpellCall(lua, "cast", 1);
 
     // Temporary: Do a round trip serialization.
-    const event: zlmp.MessagePackBuffer = try zlmp.toMessagePack(lua, alloc);
-    defer alloc.free(event.data);
+    try guardTypeAt(lua, LuaType.table, -1);
+    const event: zlmp.MessagePackBuffer = try zlmp.toMessagePack(lua, -1, alloc);
+    defer alloc.free(event.message);
     lua.pop(1);
     try zlmp.pushMessagePack(lua, event);
 
@@ -211,6 +212,14 @@ fn checkedCall(lua: *Lua, command: RunCommandArgs) !void {
     lua.protectedCall(.{ .args = 1, .results = 1 }) catch |err| {
         return try explainError(err, lua, command.spell.lua);
     };
+}
+
+fn guardTypeAt(lua: *Lua, expected_type: LuaType, offset: i32) !void {
+    const actual_type = lua.typeOf(offset);
+    if (expected_type != actual_type) {
+        std.debug.print("[Guard] Expected to find a '{s}' on the stack at ({d}) but found a '{s}' instead.\n", .{ @tagName(expected_type), offset, @tagName(actual_type) });
+        return error.GuardFail;
+    }
 }
 
 fn explainError(e: anytype, lua: *Lua, source: [:0]const u8) !void {
