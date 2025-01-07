@@ -145,46 +145,14 @@ fn packInto(lua: *Lua, al: *ArrayList(u8), index: i32) !void {
             try writer.writeByte(@intFromEnum(Protocol.Tags.False) + @intFromBool(lua.toBoolean(index)));
         },
         .number => if (lua.isInteger(index)) {
-            // TODO: I'm assuming LuaInteger is i64, but I believe Lua can be compiled to
-            // target i32 and f32 number types. Not sure if I will ever use that (or a user
-            // would ever require it) but this may fail to compile if that ever happens.
-            const v: LuaInteger = try lua.toInteger(index);
-
-            // Encode the runtime value with the smallest capable MessagePack type to save on space.
-            switch (v) {
-                std.math.minInt(i64)...(std.math.minInt(i32) - 1) => {
-                    _ = Protocol.Tags.Int64;
-                },
-                std.math.minInt(i32)...(std.math.minInt(i16) - 1) => {
-                    _ = Protocol.Tags.Int32;
-                },
-                std.math.minInt(i16)...(std.math.minInt(i8) - 1) => {
-                    _ = Protocol.Tags.Int16;
-                },
-                std.math.minInt(i8)...(std.math.minInt(i6) - 1) => {
-                    _ = Protocol.Tags.Int8;
-                },
-                std.math.minInt(i6)...-1 => {
-                    const negativeFixedIntSlot: u8 = 0b11100000;
-                    const byte = negativeFixedIntSlot | @as(u5, @bitCast(@as(i5, @truncate(v))));
-                    try writer.writeByte(byte);
-                },
-                0...std.math.maxInt(i8) => {
-                    const positiveFixedIntMask: u8 = 0b01111111;
-                    const byte = positiveFixedIntMask & @as(u8, @bitCast(@as(i8, @truncate(v))));
-                    try writer.writeByte(byte);
-                },
-                (std.math.maxInt(i8) + 1)...std.math.maxInt(i16) => {
-                    _ = Protocol.Tags.Int16;
-                },
-                (std.math.maxInt(i16) + 1)...std.math.maxInt(i32) => {
-                    _ = Protocol.Tags.Int32;
-                },
-                (std.math.maxInt(i32) + 1)...std.math.maxInt(i64) => {
-                    _ = Protocol.Tags.Int64;
-                },
-            }
-        } else {},
+            // TODO: LuaInteger is usually an i64, but Lua can be compiled with flags to target i32.
+            // That case is *not* handled and I do not have any plans to handle it in the future.
+            try packIntegerInto(&writer, try lua.toInteger(index));
+        } else {
+            // TODO: LuaNumber is usually a f64, but Lua can be compiled with flags to target f32.
+            // That cast is *not* handled and I do not have any plans to handle it in the future.
+            try packNumberInto(&writer, try lua.toNumber(index));
+        },
         .string => {},
         .table => {
             // Refer to https://www.lua.org/manual/5.4/manual.html#lua_next for table iteration pattern.
@@ -202,6 +170,94 @@ fn packInto(lua: *Lua, al: *ArrayList(u8), index: i32) !void {
         // be platform-provided and not meaningful to any user-controlled data object.
         .userdata, .light_userdata => {},
     }
+}
+
+/// Used to encode the given integer value into the smallest capable MessagePack integer type
+/// and writes it into the message pack buffer. Integers near zero are more frequent on average
+/// than integers near the max and min value. We opt to use the full variable length encoding
+/// functionalities of Message Pack to achieve space savings with negligible overhead.
+///
+/// For more information, refer to the Message Pack Specification for the int format family:
+/// https://github.com/msgpack/msgpack/blob/master/spec.md#int-format-family
+fn packIntegerInto(writer: *ArrayList(u8).Writer, v: i64) !void {
+    switch (v) {
+        std.math.minInt(i64)...(std.math.minInt(i32) - 1) => {
+            try writeTaggedInt(writer, Protocol.Tags.Int64, i64, v);
+        },
+        std.math.minInt(i32)...(std.math.minInt(i16) - 1) => {
+            try writeTaggedInt(writer, Protocol.Tags.Int32, i32, v);
+        },
+        std.math.minInt(i16)...(std.math.minInt(i8) - 1) => {
+            try writeTaggedInt(writer, Protocol.Tags.Int16, i16, v);
+        },
+        std.math.minInt(i8)...(std.math.minInt(i6) - 1) => {
+            try writeTaggedInt(writer, Protocol.Tags.Int8, i8, v);
+        },
+        std.math.minInt(i6)...-1 => {
+            const negativeFixedIntSlot: u8 = 0b11100000;
+            const byte = negativeFixedIntSlot | @as(u5, @bitCast(@as(i5, @truncate(v))));
+            try writer.writeByte(byte);
+        },
+        0...std.math.maxInt(i8) => {
+            const positiveFixedIntMask: u8 = 0b01111111;
+            const byte = positiveFixedIntMask & @as(u8, @bitCast(@as(i8, @truncate(v))));
+            try writer.writeByte(byte);
+        },
+        (std.math.maxInt(i8) + 1)...std.math.maxInt(i16) => {
+            try writeTaggedInt(writer, Protocol.Tags.Int16, i16, v);
+        },
+        (std.math.maxInt(i16) + 1)...std.math.maxInt(i32) => {
+            try writeTaggedInt(writer, Protocol.Tags.Int32, i32, v);
+        },
+        (std.math.maxInt(i32) + 1)...std.math.maxInt(i64) => {
+            try writeTaggedInt(writer, Protocol.Tags.Int64, i64, v);
+        },
+    }
+}
+
+/// Used to write the given value to the message pack buffer with the specified format tag.
+fn writeTaggedInt(
+    writer: *ArrayList(u8).Writer,
+    tag: Protocol.Tags,
+    comptime T: type,
+    int: LuaInteger,
+) !void {
+    try writer.writeByte(@intFromEnum(tag));
+    try writer.writeInt(T, @as(T, @truncate(int)), .big);
+}
+
+/// Used to encode the given floating point value into the smallest capable MessagePack float type
+/// (without loss of precision) and writes it into the message pack buffer.
+///
+/// For more information, refer to the Message Pack Specification for the float format family:
+/// https://github.com/msgpack/msgpack/blob/master/spec.md#float-format-family
+fn packNumberInto(writer: *ArrayList(u8).Writer, v: f64) !void {
+    if (canBeFloat32WithoutLossOfPrecision(v)) {
+        const sz = @sizeOf(f32);
+        var float: [sz]u8 = undefined;
+        std.mem.writeInt(u32, &float, @as(u32, @bitCast(@as(f32, @floatCast(v)))), .big);
+
+        try writer.writeByte(@intFromEnum(Protocol.Tags.Float32));
+        const actual = try writer.write(float[0..]);
+        std.debug.assert(sz == actual);
+    } else {
+        const sz = @sizeOf(f64);
+        var float: [sz]u8 = undefined;
+        std.mem.writeInt(u64, &float, @as(u64, @bitCast(v)), .big);
+
+        try writer.writeByte(@intFromEnum(Protocol.Tags.Float64));
+        const actual = try writer.write(float[0..]);
+        std.debug.assert(sz == actual);
+    }
+}
+
+fn canBeFloat32WithoutLossOfPrecision(v64: f64) bool {
+    return //
+    std.math.isNan(v64) //
+    or std.math.isInf(v64) //
+    or std.math.isPositiveZero(v64) //
+    or std.math.isNegativeZero(v64) //
+    or v64 == @as(f64, @floatCast(@as(f32, @floatCast(v64))));
 }
 
 fn sizeOf(lua: *Lua, index: i32) !usize {
