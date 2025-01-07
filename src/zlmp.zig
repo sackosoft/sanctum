@@ -144,16 +144,20 @@ fn packInto(lua: *Lua, al: *ArrayList(u8), index: i32) !void {
         .boolean => {
             try writer.writeByte(@intFromEnum(Protocol.Tags.False) + @intFromBool(lua.toBoolean(index)));
         },
-        .number => if (lua.isInteger(index)) {
-            // TODO: LuaInteger is usually an i64, but Lua can be compiled with flags to target i32.
-            // That case is *not* handled and I do not have any plans to handle it in the future.
-            try packIntegerInto(&writer, try lua.toInteger(index));
-        } else {
-            // TODO: LuaNumber is usually a f64, but Lua can be compiled with flags to target f32.
-            // That cast is *not* handled and I do not have any plans to handle it in the future.
-            try packNumberInto(&writer, try lua.toNumber(index));
+        .number => {
+            if (lua.isInteger(index)) {
+                // LuaInteger is usually an i64, but Lua can be compiled with flags to target i32.
+                // That case is *not* handled and I do not have any plans to handle it in the future.
+                try packIntegerInto(&writer, try lua.toInteger(index));
+            } else {
+                // LuaNumber is usually a f64, but Lua can be compiled with flags to target f32.
+                // That cast is *not* handled and I do not have any plans to handle it in the future.
+                try packNumberInto(&writer, try lua.toNumber(index));
+            }
         },
-        .string => {},
+        .string => {
+            try packStringInto(&writer, try lua.toString(index));
+        },
         .table => {
             // Refer to https://www.lua.org/manual/5.4/manual.html#lua_next for table iteration pattern.
             lua.pushNil();
@@ -195,13 +199,13 @@ fn packIntegerInto(writer: *ArrayList(u8).Writer, v: i64) !void {
         },
         std.math.minInt(i6)...-1 => {
             const negativeFixedIntSlot: u8 = 0b11100000;
-            const byte = negativeFixedIntSlot | @as(u5, @bitCast(@as(i5, @truncate(v))));
-            try writer.writeByte(byte);
+            const tag = negativeFixedIntSlot | @as(u5, @bitCast(@as(i5, @truncate(v))));
+            try writer.writeByte(tag);
         },
         0...std.math.maxInt(i8) => {
             const positiveFixedIntMask: u8 = 0b01111111;
-            const byte = positiveFixedIntMask & @as(u8, @bitCast(@as(i8, @truncate(v))));
-            try writer.writeByte(byte);
+            const tag = positiveFixedIntMask & @as(u8, @bitCast(@as(i8, @truncate(v))));
+            try writer.writeByte(tag);
         },
         (std.math.maxInt(i8) + 1)...std.math.maxInt(i16) => {
             try writeTaggedInt(writer, Protocol.Tags.Int16, i16, v);
@@ -258,6 +262,70 @@ fn canBeFloat32WithoutLossOfPrecision(v64: f64) bool {
     or std.math.isPositiveZero(v64) //
     or std.math.isNegativeZero(v64) //
     or v64 == @as(f64, @floatCast(@as(f32, @floatCast(v64))));
+}
+
+/// Used to encode the given string value into the smallest capable MessagePack string type
+/// and writes it into the message pack buffer. Short strings with length near zero are more
+/// frequent on average extremely long strings. We opt to use the full variable length encoding
+/// functionalities of Message Pack to achieve space savings with negligible overhead.
+///
+/// For more information, refer to the Message Pack Specification for the int format family:
+/// https://github.com/msgpack/msgpack/blob/master/spec.md#str-format-family
+fn packStringInto(writer: *ArrayList(u8).Writer, str: [:0]const u8) !void {
+    const length: u32 = @intCast(str.len);
+    switch (length) {
+        0...std.math.maxInt(u5) => {
+            try writeFixedString(writer, str);
+        },
+        (std.math.maxInt(u5) + 1)...std.math.maxInt(u8) => {
+            try writeTaggedLengthPrefixedString(writer, Protocol.Tags.Str8, str);
+        },
+        (std.math.maxInt(u8) + 1)...std.math.maxInt(u16) => {
+            try writeTaggedLengthPrefixedString(writer, Protocol.Tags.Str16, str);
+        },
+        (std.math.maxInt(u16) + 1)...std.math.maxInt(u32) => {
+            try writeTaggedLengthPrefixedString(writer, Protocol.Tags.Str32, str);
+        },
+    }
+}
+
+/// Used to write the given short string to the message pack buffer using the fixstr format.
+fn writeFixedString(writer: *ArrayList(u8).Writer, str: [:0]const u8) !void {
+    const length: u32 = @as(u32, @intCast(str.len));
+    const fixedStringSlot: u8 = @intFromEnum(Protocol.Tags.FixstrMin);
+    const tag = fixedStringSlot | @as(u5, @truncate(length));
+
+    try writer.writeByte(tag);
+    const actual = try writer.write(str);
+    std.debug.assert(length == actual);
+}
+
+/// Used to write the given string to the message pack buffer using the specified string family format.
+/// Only the str8, str16 and str32 (tag + length prefix) formats are supported. Callers should handle
+/// fixstr format separately.
+fn writeTaggedLengthPrefixedString(
+    writer: *ArrayList(u8).Writer,
+    comptime tag: Protocol.Tags,
+    str: [:0]const u8,
+) !void {
+    const length: u32 = @as(u32, @intCast(str.len));
+    const T: type = switch (tag) {
+        Protocol.Tags.Str8 => u8,
+        Protocol.Tags.Str16 => u16,
+        Protocol.Tags.Str32 => u32,
+        else => return error.InvalidTagForString,
+    };
+
+    // Message Pack procol value `N` -- an unsigned int representing the length of the string that follows.
+    var n: [@sizeOf(T)]u8 = undefined;
+    std.mem.writeInt(T, &n, @as(T, @truncate(length)), .big);
+
+    try writer.writeByte(@intFromEnum(tag));
+    const actual_len = try writer.write(n[0..]);
+    const actual_str = try writer.write(str);
+
+    std.debug.assert(@sizeOf(T) == actual_len);
+    std.debug.assert(str.len == actual_str);
 }
 
 fn sizeOf(lua: *Lua, index: i32) !usize {
