@@ -1,0 +1,3 @@
+Unable magic detected. The spell must return a lua table, but found a number instead.
+   1 | return 123
+   2 | 

@@ -131,7 +131,7 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
 fn validateCallable(lua: *Lua, function_name: [:0]const u8, lua_source: [:0]const u8) !void {
     const spellReturnType = lua.typeOf(-1);
     if (spellReturnType != LuaType.table) {
-        std.debug.print("Malformed spell. Expected the spell to return a lua 'table', but found a {s} instead.\n", .{@tagName(spellReturnType)});
+        std.debug.print("Unable magic detected. The spell must return a lua table, but found a {s} instead.\n", .{@tagName(spellReturnType)});
         printSourceCodeContext(lua_source, null, 0);
         return error.ExplainedExiting;
     }
@@ -139,15 +139,15 @@ fn validateCallable(lua: *Lua, function_name: [:0]const u8, lua_source: [:0]cons
     try lua.pushAny(function_name);
     const castType = lua.getTable(-2);
     if (castType == LuaType.nil) {
-        std.debug.print("Malformed spell. Expected the table returned by the spell to contain a 'cast' function, but none was found.\n", .{});
+        std.debug.print("Unstable magic detected. The spell is missing the required function named '{s}'.\n", .{function_name});
         printSourceCodeContext(lua_source, null, 0);
         return error.ExplainedExiting;
     }
 
     if (castType != LuaType.function) {
         std.debug.print(
-            "Error: Malformed spell. Expected the table returned by the spell to contain a cast 'function', but it is defined as an '{s}' instead.\n",
-            .{@tagName(castType)},
+            "Unstable magic detected. The spell is missing required function '{s}'. Found a '{s}' called '{s}' instead.\n",
+            .{ function_name, @tagName(castType), function_name },
         );
         printSourceCodeContext(lua_source, null, 0);
         return error.ExplainedExiting;

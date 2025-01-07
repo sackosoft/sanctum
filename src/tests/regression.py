@@ -31,9 +31,10 @@ def assert_results_mach_expected(expected: str, actual_bytes: bytes) -> int:
     diff = [l for l in difflib.unified_diff(expected, actual)]
     if len(diff) != 0:
         print("FAIL: Output does not match expected")
-        print("diff")
-        print("".join(diff))
-        print()
+        # I'm not finding this output particularly useful.. removing it for now.
+        # print("diff")
+        # print("".join(diff))
+        # print()
         print("Expected:")
         print(textwrap.indent(expected, ' > | '))
         print("Actual:")

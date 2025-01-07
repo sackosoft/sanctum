@@ -1,4 +1,4 @@
-Malformed spell. Expected the table returned by the spell to contain a 'cast' function, but none was found.
+Unstable magic detected. The spell is missing the required function named 'cast'.
    1 | local spell = { }
    2 | return spell
    3 | 
