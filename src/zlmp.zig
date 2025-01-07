@@ -182,7 +182,7 @@ fn packInto(lua: *Lua, al: *ArrayList(u8), index: i32) !void {
 ///
 /// For more information, refer to the Message Pack Specification for the int format family:
 /// https://github.com/msgpack/msgpack/blob/master/spec.md#map-format-family
-fn packMapInto(al: *ArrayList(u8), writer: *ArrayList(u8).Writer, lua: *Lua, index: i32) !void {
+fn packMapInto(al: *ArrayList(u8), writer: *ArrayList(u8).Writer, lua: *Lua, index: i32) anyerror!void {
     try writer.writeByte(@intFromEnum(Protocol.Tags.Map32));
 
     // Index of the first byte of the placeholder value for `N`.
@@ -207,8 +207,22 @@ fn packMapInto(al: *ArrayList(u8), writer: *ArrayList(u8).Writer, lua: *Lua, ind
     // Message Pack protocol's `N` - representing the number of key value pairs in the map.
     var n: u32 = 0;
 
-    lua.pushNil(); // Refer to https://www.lua.org/manual/5.4/manual.html#lua_next for table iteration pattern.
+    // Refer to https://www.lua.org/manual/5.4/manual.html#lua_next for table iteration pattern.
+    lua.pushNil();
     while (lua.next(index - 1)) : (n += 1) {
+        // Push the key to the top of the stack with the value below it, since we need to serialize keys
+        // before values.
+        lua.insert(-2);
+        try packInto(lua, al, -1);
+
+        // Push the value to the top of the sack with the key below it so that we can seralize the value.
+        // The table iteration pattern requires the key to remain on the stack for the next iteration,
+        // so we do not want to pop it when we finish serializing it.
+        lua.insert(-2);
+        try packInto(lua, al, -1);
+
+        // Both key and value have now been serialized, we can pop the value from the stack and go to the
+        // next iteration. The key remains on top of the stack -- required for the iteration pattern
         lua.pop(1);
     }
 
