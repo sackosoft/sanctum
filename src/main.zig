@@ -113,7 +113,7 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
     // be mutated and it should never move on the stack. Calls to functions inside this table
     // are made in order to "prepare" and "cast" the spell.
     try checkedDoString(lua, command.spell.lua);
-    try validateSpell(lua, command);
+    try validateCallable(lua, "cast", command.spell.lua);
 
     // The seed event is placed on top of the stack to prepare for execution. I believe this is
     // temporary, for the POC-phase of the project, and will eventually be replaced by an event
@@ -128,30 +128,32 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
     }
 }
 
-fn validateSpell(lua: *Lua, command: RunCommandArgs) !void {
-    const spellType = lua.typeOf(-1);
-    if (spellType != LuaType.table) {
-        std.debug.print(
-            "Error: Malformed spell. Expected lua spell to return a table, but it was a {s} instead.\n",
-            .{@tagName(spellType)},
-        );
-        printSourceCodeContext(command.spell.lua, null, 0);
+fn validateCallable(lua: *Lua, function_name: [:0]const u8, lua_source: [:0]const u8) !void {
+    const spellReturnType = lua.typeOf(-1);
+    if (spellReturnType != LuaType.table) {
+        std.debug.print("Malformed spell. Expected the spell to return a lua 'table', but found a {s} instead.\n", .{@tagName(spellReturnType)});
+        printSourceCodeContext(lua_source, null, 0);
         return error.ExplainedExiting;
     }
 
-    try lua.pushAny("cast");
-    const castType = lua.getTable(-1);
+    try lua.pushAny(function_name);
+    const castType = lua.getTable(-2);
     if (castType == LuaType.nil) {
-        std.debug.print("Error: Malformed spell. Expected lua spell contain function 'cast()', but it does not exist.\n", .{});
-        return error.ExplainedExiting;
-    } else if (castType != LuaType.function) {
-        std.debug.print(
-            "Error: Malformed spell. Expected lua spell to define a function named 'cast', but it is defined as a {s} instead.\n",
-            .{@tagName(castType)},
-        );
-        printSourceCodeContext(command.spell.lua, null, 0);
+        std.debug.print("Malformed spell. Expected the table returned by the spell to contain a 'cast' function, but none was found.\n", .{});
+        printSourceCodeContext(lua_source, null, 0);
         return error.ExplainedExiting;
     }
+
+    if (castType != LuaType.function) {
+        std.debug.print(
+            "Error: Malformed spell. Expected the table returned by the spell to contain a cast 'function', but it is defined as an '{s}' instead.\n",
+            .{@tagName(castType)},
+        );
+        printSourceCodeContext(lua_source, null, 0);
+        return error.ExplainedExiting;
+    }
+
+    lua.pop(1);
 }
 
 /// Used to setup the contents and order of elements on the stack before the cast function of a spell

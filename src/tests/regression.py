@@ -5,15 +5,17 @@ import textwrap
 
 from pathlib import Path
 from sys import argv
+from typing import Optional
 
 FAILED = 1
-SUCCESS = 0
+PASSED = 0
 
 class TestFiles:
     EVENT_SEED = "seed.lua"
     SPELL = "spell.lua"
-    STDOUT = "stdout.assert"
-    STDERR = "stderr.assert"
+    EXPECTED_STDOUT = "stdout.assert"
+    EXPECTED_STDERR = "stderr.assert"
+    EXPECTED_EXIT_CODE = "exitcode.assert"
 
 def try_decode_utf8(std_x: bytes) -> str:
     try:
@@ -39,11 +41,12 @@ def assert_results_mach_expected(expected: str, actual_bytes: bytes) -> int:
         print()
         return FAILED
     else:
-        return SUCCESS
+        return PASSED
 
-def try_run_process(command: list):
+def try_run_process(command: list, expected_exit_code: Optional[int]):
+    expected_exit_code = expected_exit_code if expected_exit_code != None else 0
     result = subprocess.run(command, capture_output=True)
-    if result.returncode != 0:
+    if result.returncode != expected_exit_code:
         print(f"FAIL: Exited with non-zero exit code {result.returncode}")
         print("stdout:")
         print(textwrap.indent(result.stdout.decode("utf-8"), '  '))
@@ -51,7 +54,7 @@ def try_run_process(command: list):
         print(textwrap.indent(result.stderr.decode("utf-8"), '  '))
         return (FAILED, result)
     else:
-        return (SUCCESS, result)
+        return (PASSED, result)
 
 def _assert_outputs(test_dir_path, result):
     """
@@ -61,14 +64,15 @@ def _assert_outputs(test_dir_path, result):
     """
     outcome = 0
     assertion_files = [
-        (TestFiles.STDOUT, result.stdout),
-        (TestFiles.STDERR, result.stderr),
+        (TestFiles.EXPECTED_STDOUT, result.stdout),
+        (TestFiles.EXPECTED_STDERR, result.stderr),
     ]
     for (assert_file_name, actual_bytes) in assertion_files:
         assert_file = t / assert_file_name
         if assert_file.is_file():
             expected = assert_file.read_text()
-            outcome += assert_results_mach_expected(expected, actual_bytes)
+            if PASSED != assert_results_mach_expected(expected, actual_bytes):
+                outcome = FAILED
     return outcome
 
 def _freeze_outputs(test_dir_path, result):
@@ -79,19 +83,22 @@ def _freeze_outputs(test_dir_path, result):
     output files. This sets the current output from Sanctum as the "golden output" for future tests.
     """
     assertion_files = [
-        (TestFiles.STDOUT, result.stdout),
-        (TestFiles.STDERR, result.stderr),
+        (TestFiles.EXPECTED_STDOUT, result.stdout),
+        (TestFiles.EXPECTED_STDERR, result.stderr),
     ]
     for (assert_file_name, actual_bytes) in assertion_files:
         actual = try_decode_utf8(actual_bytes)
-
         assert_file = t / assert_file_name
         assert_file.write_text(actual)
-    return SUCCESS
+    return PASSED
 
+# A mapping from the command line 'action' argument to information about how to run the action.
+# The action tuple contains a function to execute with the output from running the executable as a subprocess;
+# as well as a boolean indicating whether the action should be run on failure (True) or if the action
+# should be skipped when the subprocess fails with a non-zero exit code (False)
 TEST_ACTIONS = {
-    "--test": _assert_outputs,
-    "--freeze": _freeze_outputs,
+    "--test": (_assert_outputs, False),
+    "--freeze": (_freeze_outputs, True),
 }
 
 if __name__ == "__main__":
@@ -116,18 +123,20 @@ if __name__ == "__main__":
     tests = [Path(directory[0]) for directory in os.walk(str(test_suite_dir.resolve())) if TestFiles.SPELL in directory[2]]
     for t in tests:
         attempts += 1
-        print(f"Running regression {action_arg.replace('-', '')} on '{t}'")
+        print(f"Running '{action_arg.replace('-', '')}' on test case '{t}'")
         event_seed = t / TestFiles.EVENT_SEED
         spell = t / TestFiles.SPELL
+        exit_code = t / TestFiles.EXPECTED_EXIT_CODE
+        expected_exit_code = int(exit_code.read_text().strip()) if exit_code.is_file() else None
         command = [exe, "cast", str(spell.resolve()), "--seed", str(event_seed.resolve())]
 
-        (outcome, result) = try_run_process(command)
-        if outcome != SUCCESS:
-            failures += FAILED
-            continue
+        (after_run_action, run_on_failure) = TEST_ACTIONS[action_arg]
+        (run_outcome, result) = try_run_process(command, expected_exit_code)
+
+        if run_outcome == PASSED or run_on_failure:
+            failures += after_run_action(t, result)
         else:
-            test_action = TEST_ACTIONS[action_arg]
-            failures += test_action(t, result)
+            failures += FAILED
 
     if failures == 0:
         print("PASS")

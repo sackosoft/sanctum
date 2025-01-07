@@ -1,0 +1,4 @@
+Malformed spell. Expected the table returned by the spell to contain a 'cast' function, but none was found.
+   1 | local spell = { }
+   2 | return spell
+   3 | 

@@ -37,6 +37,7 @@ single node (no networking, no persistence).
     - [ ] Spells can consume magical energy (events).
         - [ ] Magical energies are always internally stored as MessagePack buffers.
     - [ ] Spells can produce magical energy or act as a terminal action, producing nothing.
+    - [ ] Remove this section from the README, create release notes and initial release artifacts.
 
 ## v0.2 Prototype - Pending
 
