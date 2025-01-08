@@ -22,6 +22,7 @@ pub fn main() !void {
         break :blk RunCommandArgs{
             .spell = try loadSpell(alloc, args),
             .event_seed_lua = try loadEventSeed(alloc, args),
+            .flags = try loadAdditionalFlags(args),
         };
     };
     defer alloc.free(run_command_args.spell.name);
@@ -38,8 +39,17 @@ pub fn main() !void {
 }
 
 const RunCommandArgs = struct {
+    const Flags = enum(u32) {
+        DumpEvents = 0b00000000000000000000000000000001,
+    };
+
     spell: Spell,
     event_seed_lua: [:0]const u8,
+    flags: u32,
+
+    fn hasFlag(self: RunCommandArgs, f: Flags) bool {
+        return (self.flags & @intFromEnum(f)) > 0;
+    }
 };
 
 const Spell = struct {
@@ -102,6 +112,18 @@ fn loadEventSeed(alloc: std.mem.Allocator, args: [][:0]u8) ![:0]const u8 {
     return error.InvalidArguments;
 }
 
+fn loadAdditionalFlags(args: [][:0]u8) !u32 {
+    var result: u32 = 0;
+
+    for (args) |arg| {
+        if (std.mem.eql(u8, "--dump-events", arg)) {
+            result |= @intFromEnum(RunCommandArgs.Flags.DumpEvents);
+        }
+    }
+
+    return result;
+}
+
 fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
     var lua = try Lua.init(alloc);
     defer lua.deinit();
@@ -124,14 +146,9 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
     try checkedDoString(lua, command.event_seed_lua);
     try prepareSpellCall(lua, "cast", 1);
 
-    // Temporary: Do a round trip serialization.
-    try guardTypeAt(lua, LuaType.table, -1);
-    const event: zlmp.MessagePackBuffer = try zlmp.toMessagePack(lua, -1, alloc);
-    defer alloc.free(event.message);
-
-    // var buf: [8192]u8 = undefined;
-    // const b64 = std.base64.standard.Encoder.encode(&buf, event.message);
-    // std.debug.print("https://msgpack.dbrgn.ch/#base64={s}\n", .{b64});
+    if (command.hasFlag(RunCommandArgs.Flags.DumpEvents)) {
+        try dumpEvent(lua, LuaType.table, -1, alloc);
+    }
     // lua.pop(1);
     // try zlmp.pushMessagePack(lua, event);
 
@@ -139,7 +156,21 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
     while (!shouldStop(lua, i)) : (i += 1) {
         try checkedCall(lua, command);
         try prepareSpellCall(lua, "cast", 1);
+
+        if (command.hasFlag(RunCommandArgs.Flags.DumpEvents) and lua.isTable(-1)) {
+            try dumpEvent(lua, LuaType.table, -1, alloc);
+        }
     }
+}
+
+fn dumpEvent(lua: *Lua, lua_type: LuaType, index: i32, alloc: std.mem.Allocator) !void {
+    try guardTypeAt(lua, lua_type, index);
+    const event: zlmp.MessagePackBuffer = try zlmp.toMessagePack(lua, index, alloc);
+    defer alloc.free(event.message);
+
+    var buf: [8192]u8 = undefined;
+    const b64 = std.base64.standard.Encoder.encode(&buf, event.message);
+    std.debug.print("https://msgpack.dbrgn.ch/#base64={s}\n", .{b64});
 }
 
 fn validateCallable(lua: *Lua, function_name: [:0]const u8, lua_source: [:0]const u8) !void {

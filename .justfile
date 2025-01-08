@@ -16,7 +16,7 @@ _test script executable suite flags:
 
 run: build (_run sanctum sample_spell sample_event)
 _run executable spell event:
-    @{{executable}} cast {{sample_spell}} --seed {{sample_event}}
+    @{{executable}} cast {{sample_spell}} --seed {{sample_event}} --dump-events
 
 build:
     zig build
