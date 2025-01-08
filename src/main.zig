@@ -170,7 +170,8 @@ fn dumpEvent(lua: *Lua, lua_type: LuaType, index: i32, alloc: std.mem.Allocator)
 
     var buf: [8192]u8 = undefined;
     const b64 = std.base64.standard.Encoder.encode(&buf, event.message);
-    std.debug.print("https://msgpack.dbrgn.ch/#base64={s}\n", .{b64});
+    // std.debug.print("https://msgpack.dbrgn.ch/#base64={s}\n", .{b64});
+    std.debug.print("file:///C:/Users/thsackos/Desktop/mpv.html#base64={s}\n", .{b64});
 }
 
 fn validateCallable(lua: *Lua, function_name: [:0]const u8, lua_source: [:0]const u8) !void {

@@ -42,9 +42,14 @@ pub fn toMessagePackOptions(lua: *Lua, index: i32, alloc: std.mem.Allocator, opt
     return toMessagePackOptionsInternal(lua, index, alloc, options);
 }
 
-pub fn pushMessagePack(lua: *Lua, event: MessagePackBuffer) !void {
-    _ = lua;
-    _ = event;
+/// Deserializes the given binary content and restores the lua value represented to
+/// the top of the stack. This function will internally allocate copies of memory in
+/// the given buffer and the caller may free the memory used by the given buffer.
+///
+/// * Pops: `0`
+/// * Pushes: `1`
+pub fn pushMessagePack(lua: *Lua, buffer: MessagePackBuffer) !void {
+    return pushMessagePackInternal(lua, buffer);
 }
 
 /// Controls how the serialization fucttions allocate memory when serializing lua values.
@@ -74,6 +79,12 @@ pub const ToMessagePackOptions = struct {
 };
 
 const Protocol = struct {
+    /// Some tags in the Message Pack protocol encode both the tag and a length value.
+    /// These compound tags use the high order bits to uniquely identify the tag value,
+    /// and the least significant bits to encode a short length value. Such tags can
+    /// efficiently encode smaller instances of that data type. For example an integer
+    /// near zero can be encoded in one byte, or short strings without an additional
+    /// length field. Those tags appear here as having a `Min` and `Max` variant.
     const Tags = enum(u8) {
         // Positive fixint range (0 to 127)
         PositiveFixintMin = 0x00,
@@ -439,4 +450,144 @@ fn sizeOf(lua: *Lua, index: i32) !usize {
         // be platform-provided and not meaningful to any user-controlled data object.
         .userdata, .light_userdata => 0,
     };
+}
+
+pub fn pushMessagePackInternal(lua: *Lua, buffer: MessagePackBuffer) !void {
+    var i: usize = 0;
+
+    while (i < buffer.message.len) {
+        const tag = buffer.message[i];
+
+        switch (tag) {
+            Protocol.Tags.Nil => {
+                lua.pushNil();
+                i += 1;
+            },
+
+            Protocol.Tags.False, Protocol.Tags.True => {
+                const value = (tag == Protocol.Tags.True);
+                lua.pushBoolean(value);
+                i += 1;
+            },
+
+            Protocol.Tags.PositiveFixintMin...Protocol.Tags.PositiveFixintMax => {
+                const value = @as(u7, @truncate(tag));
+                lua.pushInteger(value);
+                i += 1;
+            },
+
+            Protocol.Tags.NegativeFixintMin...Protocol.Tags.NegativeFixintMax => {
+                const value = @as(i5, @bitCast(@as(u5, @truncate(tag))));
+                lua.pushInteger(value);
+                i += 1;
+            },
+
+            Protocol.Tags.FixstrMin...Protocol.Tags.FixstrMax => {
+                const len = @as(u5, @truncate(tag));
+                i += 1;
+                const str = buffer.message[i .. i + len];
+                _ = lua.pushStringZ(str);
+                i += len;
+            },
+
+            Protocol.Tags.Int8, Protocol.Tags.Int16, Protocol.Tags.Int32, Protocol.Tags.Int64 => {
+                const t_int = switch (tag) {
+                    .Int8 => i8,
+                    .Int16 => i16,
+                    .Int32 => i32,
+                    .Int64 => i64,
+                };
+                pushTaggedInteger(t_int, lua, &i, buffer.message);
+            },
+
+            Protocol.Tags.Str8, Protocol.Tags.Str16, Protocol.Tags.Str32 => {
+                const t_length_field = switch (tag) {
+                    .Str8 => u8,
+                    .Str16 => u16,
+                    .Str32 => u32,
+                };
+                pushTaggedString(t_length_field, lua, &i, buffer.message);
+            },
+
+            Protocol.Tags.Float32 => {
+                i += 1;
+                const value = readFloat32(buffer.message[i .. i + @sizeOf(f32)]);
+                lua.pushNumber(@as(LuaNumber, @floatCast(value)));
+                i += @sizeOf(f32);
+            },
+            Protocol.Tags.Float64 => {
+                i += 1;
+                const value = readFloat64(buffer.message[i .. i + @sizeOf(f64)]);
+                lua.pushNumber(value);
+                i += @sizeOf(f64);
+            },
+
+            Protocol.Tags.Map32 => {
+                i += 1;
+            },
+
+            else => {
+                std.debug.print("Found unrecognized message pack tag 0x{x} at index {d}\n", .{ tag, i });
+                return error.UnrecognizedMessagePackTag;
+            },
+        }
+    }
+
+    std.debug.assert(i == buffer.message.len);
+}
+
+fn pushTaggedInteger(comptime T: type, lua: *Lua, i: *usize, message: []const u8) void {
+    // Advance past the tag to the number.
+    i.* += 1;
+
+    // Internally advances past the number to land on the next tag.
+    const value: T = readInt(T, i, message);
+    lua.pushInteger(value);
+}
+
+fn pushTaggedString(comptime T: type, lua: *Lua, i: *usize, message: []const u8) void {
+    // Advance past the tag to the length field
+    i.* += 1;
+
+    // Internally advances past the number to the start of the string data
+    const len = readInt(T, i, message);
+
+    const str = message[(i.*)..(i + len)];
+    _ = lua.pushStringZ(str);
+
+    // Advance past the string data to land on the next tag.
+    i += len;
+}
+
+fn readInt(comptime T: type, i: *usize, message: []const u8) T {
+    const number: *[@sizeOf(T)]u8 = @ptrCast(message[(i.*)..(i.* + @sizeOf(T))]);
+    const value = std.mem.readInt(T, number, .big);
+
+    // Advance forward past the number read.
+    i.* += @sizeOf(T);
+
+    return value;
+}
+
+const builtin = @import("builtin");
+const native_endian = builtin.cpu.arch.endian();
+
+fn readFloat32(bytes: [4]u8) f32 {
+    const buf: u32 = undefined;
+    @memcpy(&buf, bytes);
+    if (native_endian == .little) {
+        @byteSwap(buf);
+    }
+    const value: *f32 = @ptrCast(&buf);
+    return value.*;
+}
+
+fn readFloat64(bytes: [8]u8) f64 {
+    const buf: u64 = undefined;
+    @memcpy(&buf, bytes);
+    if (native_endian == .little) {
+        @byteSwap(buf);
+    }
+    const value: *f64 = @ptrCast(&buf);
+    return value.*;
 }
