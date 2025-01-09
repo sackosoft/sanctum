@@ -1,6 +1,8 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
 
+const native_endianness = @import("builtin").cpu.arch.endian();
+
 const ziglua = @import("ziglua");
 const Lua = ziglua.Lua;
 const LuaInteger = ziglua.Integer;
@@ -49,7 +51,8 @@ pub fn toMessagePackOptions(lua: *Lua, index: i32, alloc: std.mem.Allocator, opt
 /// * Pops: `0`
 /// * Pushes: `1`
 pub fn pushMessagePack(lua: *Lua, buffer: MessagePackBuffer) !void {
-    return pushMessagePackInternal(lua, buffer);
+    var i: usize = 0;
+    return pushMessagePackInternal(lua, &i, buffer);
 }
 
 /// Controls how the serialization fucttions allocate memory when serializing lua values.
@@ -452,142 +455,205 @@ fn sizeOf(lua: *Lua, index: i32) !usize {
     };
 }
 
-pub fn pushMessagePackInternal(lua: *Lua, buffer: MessagePackBuffer) !void {
-    var i: usize = 0;
+const Iter = struct {
+    fn next(index: *usize) void {
+        advance(index, 1);
+    }
+    fn advance(index: *usize, amt: usize) void {
+        index.* += @intCast(amt);
+    }
+    fn advanceByType(index: *usize, comptime T: type) void {
+        index.* += @sizeOf(T);
+    }
+};
+pub fn pushMessagePackInternal(lua: *Lua, i: *usize, buffer: MessagePackBuffer) !void {
+    while (i.* < buffer.message.len) {
+        const tag_value = buffer.message[i.*];
+        const tag: Protocol.Tags = @enumFromInt(tag_value);
+        Iter.next(i);
 
-    while (i < buffer.message.len) {
-        const tag = buffer.message[i];
-
-        switch (tag) {
-            Protocol.Tags.Nil => {
+        switch (tag_value) {
+            @intFromEnum(Protocol.Tags.Nil) => {
                 lua.pushNil();
-                i += 1;
             },
 
-            Protocol.Tags.False, Protocol.Tags.True => {
+            @intFromEnum(Protocol.Tags.False), @intFromEnum(Protocol.Tags.True) => {
                 const value = (tag == Protocol.Tags.True);
                 lua.pushBoolean(value);
-                i += 1;
             },
 
-            Protocol.Tags.PositiveFixintMin...Protocol.Tags.PositiveFixintMax => {
-                const value = @as(u7, @truncate(tag));
+            @intFromEnum(Protocol.Tags.PositiveFixintMin)...@intFromEnum(Protocol.Tags.PositiveFixintMax) => {
+                const value = @as(u7, @truncate(tag_value));
                 lua.pushInteger(value);
-                i += 1;
             },
 
-            Protocol.Tags.NegativeFixintMin...Protocol.Tags.NegativeFixintMax => {
-                const value = @as(i5, @bitCast(@as(u5, @truncate(tag))));
+            @intFromEnum(Protocol.Tags.NegativeFixintMin)...@intFromEnum(Protocol.Tags.NegativeFixintMax) => {
+                const value = @as(i5, @bitCast(@as(u5, @truncate(tag_value))));
                 lua.pushInteger(value);
-                i += 1;
             },
 
-            Protocol.Tags.FixstrMin...Protocol.Tags.FixstrMax => {
-                const len = @as(u5, @truncate(tag));
-                i += 1;
-                const str = buffer.message[i .. i + len];
-                _ = lua.pushStringZ(str);
-                i += len;
+            @intFromEnum(Protocol.Tags.FixstrMin)...@intFromEnum(Protocol.Tags.FixstrMax) => {
+                const len = @as(u5, @truncate(tag_value));
+
+                std.debug.assert(buffer.message[i.* + len - 1] == 0);
+                const str = buffer.message[i.* .. i.* + len];
+                Iter.advance(i, len);
+
+                _ = lua.pushString(str);
             },
 
-            Protocol.Tags.Int8, Protocol.Tags.Int16, Protocol.Tags.Int32, Protocol.Tags.Int64 => {
-                const t_int = switch (tag) {
-                    .Int8 => i8,
-                    .Int16 => i16,
-                    .Int32 => i32,
-                    .Int64 => i64,
-                };
-                pushTaggedInteger(t_int, lua, &i, buffer.message);
+            @intFromEnum(Protocol.Tags.Int8) => {
+                const t_int = i8;
+                pushInteger(lua, t_int, i.*, buffer.message);
+                Iter.advanceByType(i, t_int);
+            },
+            @intFromEnum(Protocol.Tags.Int16) => {
+                const t_int = i16;
+                pushInteger(lua, t_int, i.*, buffer.message);
+                Iter.advanceByType(i, t_int);
+            },
+            @intFromEnum(Protocol.Tags.Int32) => {
+                const t_int = i32;
+                pushInteger(lua, t_int, i.*, buffer.message);
+                Iter.advanceByType(i, t_int);
+            },
+            @intFromEnum(Protocol.Tags.Int64) => {
+                const t_int = i64;
+                pushInteger(lua, t_int, i.*, buffer.message);
+                Iter.advanceByType(i, t_int);
             },
 
-            Protocol.Tags.Str8, Protocol.Tags.Str16, Protocol.Tags.Str32 => {
-                const t_length_field = switch (tag) {
-                    .Str8 => u8,
-                    .Str16 => u16,
-                    .Str32 => u32,
-                };
-                pushTaggedString(t_length_field, lua, &i, buffer.message);
+            @intFromEnum(Protocol.Tags.Str8) => {
+                const t_len_int = u8;
+                const len = peekInteger(t_len_int, i.*, buffer.message);
+                Iter.advanceByType(i, t_len_int);
+
+                pushString(lua, i.*, buffer.message, @intCast(len));
+                Iter.advance(i, len);
+            },
+            @intFromEnum(Protocol.Tags.Str16) => {
+                const t_len_int = u16;
+                const len = peekInteger(t_len_int, i.*, buffer.message);
+                Iter.advanceByType(i, t_len_int);
+
+                pushString(lua, i.*, buffer.message, @intCast(len));
+                Iter.advance(i, len);
+            },
+            @intFromEnum(Protocol.Tags.Str32) => {
+                const t_len_int = u32;
+                const len = peekInteger(t_len_int, i.*, buffer.message);
+                Iter.advanceByType(i, t_len_int);
+
+                pushString(lua, i.*, buffer.message, @intCast(len));
+                Iter.advance(i, len);
             },
 
-            Protocol.Tags.Float32 => {
-                i += 1;
-                const value = readFloat32(buffer.message[i .. i + @sizeOf(f32)]);
+            @intFromEnum(Protocol.Tags.Float32) => {
+                const t_float = f32;
+                const value = peekFloat(t_float, i.*, buffer.message);
+                Iter.advanceByType(i, t_float);
+
                 lua.pushNumber(@as(LuaNumber, @floatCast(value)));
-                i += @sizeOf(f32);
             },
-            Protocol.Tags.Float64 => {
-                i += 1;
-                const value = readFloat64(buffer.message[i .. i + @sizeOf(f64)]);
-                lua.pushNumber(value);
-                i += @sizeOf(f64);
+            @intFromEnum(Protocol.Tags.Float64) => {
+                const t_float = f64;
+                const value = peekFloat(t_float, i.*, buffer.message);
+                Iter.advanceByType(i, t_float);
+
+                lua.pushNumber(@as(LuaNumber, @floatCast(value)));
             },
 
-            Protocol.Tags.Map32 => {
-                i += 1;
+            // At the time of writing, only map32 format is supported by the serializer; however,
+            // we will implement support for all of the map types, since the deserialization work
+            // is not blocked by the same issue.
+            //
+            // The serializer does not support all types because we need to know ahead of time,
+            // before iterating the table, how many bytes to skip for the number of pairs in
+            // the map. I was being lazy and didn't want to figure that out yet, so we just always
+            // use the map32 format.
+            @intFromEnum(Protocol.Tags.FixmapMin)...@intFromEnum(Protocol.Tags.FixmapMax) => {
+                const kvp_count: u32 = @intCast(@as(u4, @truncate(tag_value)));
+                try pushTable(lua, i, buffer, kvp_count);
+            },
+
+            @intFromEnum(Protocol.Tags.Map16) => {
+                const t_int = u16;
+                const kvp_count: u32 = @intCast(peekInteger(t_int, i.*, buffer.message));
+                Iter.advanceByType(i, t_int);
+
+                try pushTable(lua, i, buffer, kvp_count);
+            },
+            @intFromEnum(Protocol.Tags.Map32) => {
+                const t_int = u32;
+                const kvp_count: u32 = peekInteger(t_int, i.*, buffer.message);
+                Iter.advanceByType(i, t_int);
+
+                try pushTable(lua, i, buffer, kvp_count);
             },
 
             else => {
-                std.debug.print("Found unrecognized message pack tag 0x{x} at index {d}\n", .{ tag, i });
+                std.debug.print("Found unrecognized message pack tag 0x{x} at index {d}\n", .{ @intFromEnum(tag), i });
                 return error.UnrecognizedMessagePackTag;
             },
         }
     }
 
-    std.debug.assert(i == buffer.message.len);
+    std.debug.assert(i.* == buffer.message.len);
 }
 
-fn pushTaggedInteger(comptime T: type, lua: *Lua, i: *usize, message: []const u8) void {
-    // Advance past the tag to the number.
-    i.* += 1;
+fn pushTable(lua: *Lua, i: *usize, buffer: MessagePackBuffer, kvp_count: u32) anyerror!void {
+    lua.newTable();
 
-    // Internally advances past the number to land on the next tag.
-    const value: T = readInt(T, i, message);
-    lua.pushInteger(value);
-}
+    for (0..kvp_count) |_| {
+        try pushMessagePackInternal(lua, i, buffer); // key
+        try pushMessagePackInternal(lua, i, buffer); // value
 
-fn pushTaggedString(comptime T: type, lua: *Lua, i: *usize, message: []const u8) void {
-    // Advance past the tag to the length field
-    i.* += 1;
-
-    // Internally advances past the number to the start of the string data
-    const len = readInt(T, i, message);
-
-    const str = message[(i.*)..(i + len)];
-    _ = lua.pushStringZ(str);
-
-    // Advance past the string data to land on the next tag.
-    i += len;
-}
-
-fn readInt(comptime T: type, i: *usize, message: []const u8) T {
-    const number: *[@sizeOf(T)]u8 = @ptrCast(message[(i.*)..(i.* + @sizeOf(T))]);
-    const value = std.mem.readInt(T, number, .big);
-
-    // Advance forward past the number read.
-    i.* += @sizeOf(T);
-
-    return value;
-}
-
-const builtin = @import("builtin");
-const native_endian = builtin.cpu.arch.endian();
-
-fn readFloat32(bytes: [4]u8) f32 {
-    const buf: u32 = undefined;
-    @memcpy(&buf, bytes);
-    if (native_endian == .little) {
-        @byteSwap(buf);
+        lua.setTable(-3); // table[key] = value
     }
-    const value: *f32 = @ptrCast(&buf);
-    return value.*;
 }
 
-fn readFloat64(bytes: [8]u8) f64 {
-    const buf: u64 = undefined;
-    @memcpy(&buf, bytes);
-    if (native_endian == .little) {
-        @byteSwap(buf);
+fn pushInteger(lua: *Lua, comptime T: type, i: usize, message: []const u8) void {
+    const value = peekInteger(T, i, message);
+    lua.pushInteger(@as(LuaInteger, @intCast(value)));
+}
+
+fn pushString(lua: *Lua, i: usize, message: []const u8, len: usize) void {
+    const str = message[i..(i + len)];
+    _ = lua.pushString(str);
+}
+
+/// Reads the integer of size `T` from the given Message Pack message at index `i`.
+///
+/// Multi-byte numbers in the Message Pack specification are always in big-endian format.
+/// This function handles conversion to the native endianess.
+fn peekInteger(comptime T: type, i: usize, message: []const u8) T {
+    const number: *const [@sizeOf(T)]u8 = @ptrCast(message[i..(i + @sizeOf(T))]);
+    return std.mem.readInt(T, number, .big);
+}
+
+/// Reads a floating point number of size `T` from the given Message Pack message at
+/// index `i`.
+///
+/// Floating point numbers in the Message Pack specification are always in big-endian format.
+/// This function handles conversion to the native endianess.
+fn peekFloat(comptime T: type, i: usize, message: []const u8) T {
+    const TSizedUint = switch (T) {
+        f16 => u16,
+        f32 => u32,
+        f64 => u64,
+        f80 => u80,
+        f128 => u128,
+        else => {
+            @compileError("Unsupported float type '" ++ @typeName(T) ++ "': peekFloat(T, ...) only supports one of (f16, f32, f64, f80, f128)");
+        },
+    };
+
+    var buffer: TSizedUint = undefined;
+    @memcpy(@as(*[@sizeOf(TSizedUint)]u8, @ptrCast(&buffer)), message[i .. i + @sizeOf(T)]);
+
+    if (native_endianness == .little) {
+        buffer = @byteSwap(buffer);
     }
-    const value: *f64 = @ptrCast(&buf);
-    return value.*;
+
+    return @as(*T, @ptrCast(&buffer)).*;
 }

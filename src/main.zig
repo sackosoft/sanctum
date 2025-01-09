@@ -146,32 +146,33 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
     try checkedDoString(lua, command.event_seed_lua);
     try prepareSpellCall(lua, "cast", 1);
 
+    try guardTypeAt(lua, LuaType.table, -1);
+    const event: zlmp.MessagePackBuffer = try zlmp.toMessagePack(lua, -1, alloc);
+    defer alloc.free(event.message);
+
     if (command.hasFlag(RunCommandArgs.Flags.DumpEvents)) {
-        try dumpEvent(lua, LuaType.table, -1, alloc);
+        try dumpEvent(event.message);
     }
-    // lua.pop(1);
-    // try zlmp.pushMessagePack(lua, event);
+
+    lua.pop(1);
+    try zlmp.pushMessagePack(lua, event);
 
     var i: usize = 0;
     while (!shouldStop(lua, i)) : (i += 1) {
         try checkedCall(lua, command);
         try prepareSpellCall(lua, "cast", 1);
 
-        if (command.hasFlag(RunCommandArgs.Flags.DumpEvents) and lua.isTable(-1)) {
-            try dumpEvent(lua, LuaType.table, -1, alloc);
+        if (false and command.hasFlag(RunCommandArgs.Flags.DumpEvents) and lua.isTable(-1)) {
+            try dumpEvent(event.message);
         }
     }
 }
 
-fn dumpEvent(lua: *Lua, lua_type: LuaType, index: i32, alloc: std.mem.Allocator) !void {
-    try guardTypeAt(lua, lua_type, index);
-    const event: zlmp.MessagePackBuffer = try zlmp.toMessagePack(lua, index, alloc);
-    defer alloc.free(event.message);
-
+fn dumpEvent(message: []const u8) !void {
     var buf: [8192]u8 = undefined;
-    const b64 = std.base64.standard.Encoder.encode(&buf, event.message);
-    // std.debug.print("https://msgpack.dbrgn.ch/#base64={s}\n", .{b64});
-    std.debug.print("file:///C:/Users/thsackos/Desktop/mpv.html#base64={s}\n", .{b64});
+    @memset(&buf, 0);
+    _ = std.base64.standard.Encoder.encode(&buf, message);
+    std.debug.print("https://msgpack.dbrgn.ch/#base64={s}\n", .{buf});
 }
 
 fn validateCallable(lua: *Lua, function_name: [:0]const u8, lua_source: [:0]const u8) !void {
