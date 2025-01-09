@@ -1,6 +1,8 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
 
+const native_endianness = @import("builtin").cpu.arch.endian();
+
 const ziglua = @import("ziglua");
 const Lua = ziglua.Lua;
 const LuaInteger = ziglua.Integer;
@@ -42,9 +44,15 @@ pub fn toMessagePackOptions(lua: *Lua, index: i32, alloc: std.mem.Allocator, opt
     return toMessagePackOptionsInternal(lua, index, alloc, options);
 }
 
-pub fn pushMessagePack(lua: *Lua, event: MessagePackBuffer) !void {
-    _ = lua;
-    _ = event;
+/// Deserializes the given binary content and restores the lua value represented to
+/// the top of the stack. This function will internally allocate copies of memory in
+/// the given buffer and the caller may free the memory used by the given buffer.
+///
+/// * Pops: `0`
+/// * Pushes: `1`
+pub fn pushMessagePack(lua: *Lua, buffer: MessagePackBuffer) !void {
+    var i: usize = 0;
+    return pushMessagePackInternal(lua, &i, buffer);
 }
 
 /// Controls how the serialization fucttions allocate memory when serializing lua values.
@@ -74,6 +82,12 @@ pub const ToMessagePackOptions = struct {
 };
 
 const Protocol = struct {
+    /// Some tags in the Message Pack protocol encode both the tag and a length value.
+    /// These compound tags use the high order bits to uniquely identify the tag value,
+    /// and the least significant bits to encode a short length value. Such tags can
+    /// efficiently encode smaller instances of that data type. For example an integer
+    /// near zero can be encoded in one byte, or short strings without an additional
+    /// length field. Those tags appear here as having a `Min` and `Max` variant.
     const Tags = enum(u8) {
         // Positive fixint range (0 to 127)
         PositiveFixintMin = 0x00,
@@ -439,4 +453,194 @@ fn sizeOf(lua: *Lua, index: i32) !usize {
         // be platform-provided and not meaningful to any user-controlled data object.
         .userdata, .light_userdata => 0,
     };
+}
+
+const Iter = struct {
+    fn next(index: *usize) void {
+        advance(index, 1);
+    }
+    fn advance(index: *usize, amt: usize) void {
+        index.* += @intCast(amt);
+    }
+    fn advanceByType(index: *usize, comptime T: type) void {
+        index.* += @sizeOf(T);
+    }
+};
+pub fn pushMessagePackInternal(lua: *Lua, i: *usize, buffer: MessagePackBuffer) !void {
+    while (i.* < buffer.message.len) {
+        const tag_value = buffer.message[i.*];
+        Iter.next(i);
+
+        switch (tag_value) {
+            @intFromEnum(Protocol.Tags.PositiveFixintMin)...@intFromEnum(Protocol.Tags.PositiveFixintMax) => {
+                const value = @as(u7, @truncate(tag_value));
+                lua.pushInteger(value);
+                return;
+            },
+
+            @intFromEnum(Protocol.Tags.NegativeFixintMin)...@intFromEnum(Protocol.Tags.NegativeFixintMax) => {
+                const value = @as(i5, @bitCast(@as(u5, @truncate(tag_value))));
+                lua.pushInteger(value);
+                return;
+            },
+
+            @intFromEnum(Protocol.Tags.FixstrMin)...@intFromEnum(Protocol.Tags.FixstrMax) => {
+                const len = @as(u5, @truncate(tag_value));
+
+                // The trailing zero is missing for some reason, need to look into that.
+                // std.debug.assert(buffer.message[i.* + len - 1] == 0);
+                const str = buffer.message[i.* .. i.* + len];
+                Iter.advance(i, len);
+
+                _ = lua.pushString(str);
+                return;
+            },
+            else => {},
+        }
+
+        const tag: Protocol.Tags = @enumFromInt(tag_value);
+        switch (tag) {
+            Protocol.Tags.Nil => {
+                lua.pushNil();
+            },
+            Protocol.Tags.False, Protocol.Tags.True => {
+                const value = (tag == Protocol.Tags.True);
+                lua.pushBoolean(value);
+            },
+
+            Protocol.Tags.Int8 => {
+                const t_int = i8;
+                pushInteger(lua, t_int, i.*, buffer.message);
+                Iter.advanceByType(i, t_int);
+            },
+            Protocol.Tags.Int16 => {
+                const t_int = i16;
+                pushInteger(lua, t_int, i.*, buffer.message);
+                Iter.advanceByType(i, t_int);
+            },
+            Protocol.Tags.Int32 => {
+                const t_int = i32;
+                pushInteger(lua, t_int, i.*, buffer.message);
+                Iter.advanceByType(i, t_int);
+            },
+            Protocol.Tags.Int64 => {
+                const t_int = i64;
+                pushInteger(lua, t_int, i.*, buffer.message);
+                Iter.advanceByType(i, t_int);
+            },
+
+            Protocol.Tags.Str8 => {
+                const t_len_int = u8;
+                const len = peekInteger(t_len_int, i.*, buffer.message);
+                Iter.advanceByType(i, t_len_int);
+
+                pushString(lua, i.*, buffer.message, @intCast(len));
+                Iter.advance(i, len);
+            },
+            Protocol.Tags.Str16 => {
+                const t_len_int = u16;
+                const len = peekInteger(t_len_int, i.*, buffer.message);
+                Iter.advanceByType(i, t_len_int);
+
+                pushString(lua, i.*, buffer.message, @intCast(len));
+                Iter.advance(i, len);
+            },
+            Protocol.Tags.Str32 => {
+                const t_len_int = u32;
+                const len = peekInteger(t_len_int, i.*, buffer.message);
+                Iter.advanceByType(i, t_len_int);
+
+                pushString(lua, i.*, buffer.message, @intCast(len));
+                Iter.advance(i, len);
+            },
+
+            Protocol.Tags.Float32 => {
+                const t_float = f32;
+                const value = peekFloat(t_float, i.*, buffer.message);
+                Iter.advanceByType(i, t_float);
+
+                lua.pushNumber(@as(LuaNumber, @floatCast(value)));
+            },
+            Protocol.Tags.Float64 => {
+                const t_float = f64;
+                const value = peekFloat(t_float, i.*, buffer.message);
+                Iter.advanceByType(i, t_float);
+
+                lua.pushNumber(@as(LuaNumber, @floatCast(value)));
+            },
+
+            // At the time of writing, only map32 format is supported by the serializer
+            Protocol.Tags.Map32 => {
+                const t_int = u32;
+                const kvp_count: u32 = peekInteger(t_int, i.*, buffer.message);
+                Iter.advanceByType(i, t_int);
+
+                try pushTable(lua, i, buffer, kvp_count);
+            },
+
+            else => {
+                std.debug.print("Found unrecognized message pack tag 0x{x} at index {d}\n", .{ @intFromEnum(tag), i });
+                return error.UnrecognizedMessagePackTag;
+            },
+        }
+    }
+
+    std.debug.assert(i.* == buffer.message.len);
+}
+
+fn pushInteger(lua: *Lua, comptime T: type, i: usize, message: []const u8) void {
+    const value = peekInteger(T, i, message);
+    lua.pushInteger(@as(LuaInteger, @intCast(value)));
+}
+
+fn pushString(lua: *Lua, i: usize, message: []const u8, len: usize) void {
+    const str = message[i..(i + len)];
+    _ = lua.pushString(str);
+}
+
+fn pushTable(lua: *Lua, i: *usize, buffer: MessagePackBuffer, kvp_count: u32) anyerror!void {
+    lua.newTable();
+
+    for (0..kvp_count) |_| {
+        try pushMessagePackInternal(lua, i, buffer); // key
+        try pushMessagePackInternal(lua, i, buffer); // value
+
+        lua.setTable(-3); // table[key] = value
+    }
+}
+
+/// Reads the integer of size `T` from the given Message Pack message at index `i`.
+///
+/// Multi-byte numbers in the Message Pack specification are always in big-endian format.
+/// This function handles conversion to the native endianess.
+fn peekInteger(comptime T: type, i: usize, message: []const u8) T {
+    const number: *const [@sizeOf(T)]u8 = @ptrCast(message[i..(i + @sizeOf(T))]);
+    return std.mem.readInt(T, number, .big);
+}
+
+/// Reads a floating point number of size `T` from the given Message Pack message at
+/// index `i`.
+///
+/// Floating point numbers in the Message Pack specification are always in big-endian format.
+/// This function handles conversion to the native endianess.
+fn peekFloat(comptime T: type, i: usize, message: []const u8) T {
+    const TSizedUint = switch (T) {
+        f16 => u16,
+        f32 => u32,
+        f64 => u64,
+        f80 => u80,
+        f128 => u128,
+        else => {
+            @compileError("Unsupported float type '" ++ @typeName(T) ++ "': peekFloat(T, ...) only supports one of (f16, f32, f64, f80, f128)");
+        },
+    };
+
+    var buffer: TSizedUint = undefined;
+    @memcpy(@as(*[@sizeOf(TSizedUint)]u8, @ptrCast(&buffer)), message[i .. i + @sizeOf(T)]);
+
+    if (native_endianness == .little) {
+        buffer = @byteSwap(buffer);
+    }
+
+    return @as(*T, @ptrCast(&buffer)).*;
 }
