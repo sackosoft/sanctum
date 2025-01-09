@@ -416,9 +416,9 @@ fn writeTaggedLengthPrefixedString(
 ) !void {
     const length: u32 = @as(u32, @intCast(str.len));
     const T: type = switch (tag) {
-        Protocol.Tags.Str8 => u8,
-        Protocol.Tags.Str16 => u16,
-        Protocol.Tags.Str32 => u32,
+        .Str8 => u8,
+        .Str16 => u16,
+        .Str32 => u32,
         else => return error.InvalidTagForString,
     };
 
@@ -519,36 +519,36 @@ pub fn pushMessagePackInternal(lua: *Lua, i: *usize, buffer: MessagePackBuffer) 
     // Separately, we can handle concrete tags as tag enum values if it wasn't handled above.
     const tag: Protocol.Tags = @enumFromInt(tag_value);
     switch (tag) {
-        Protocol.Tags.Nil => {
+        .Nil => {
             lua.pushNil();
         },
-        Protocol.Tags.False, Protocol.Tags.True => {
-            const value: bool = (tag == Protocol.Tags.True);
+        .False, .True => {
+            const value: bool = (tag == .True);
             lua.pushBoolean(value);
         },
 
-        Protocol.Tags.Int8 => {
+        .Int8 => {
             const t_int = i8;
             pushInteger(lua, t_int, i.*, buffer.message);
             Iter.advanceByType(i, t_int);
         },
-        Protocol.Tags.Int16 => {
+        .Int16 => {
             const t_int = i16;
             pushInteger(lua, t_int, i.*, buffer.message);
             Iter.advanceByType(i, t_int);
         },
-        Protocol.Tags.Int32 => {
+        .Int32 => {
             const t_int = i32;
             pushInteger(lua, t_int, i.*, buffer.message);
             Iter.advanceByType(i, t_int);
         },
-        Protocol.Tags.Int64 => {
+        .Int64 => {
             const t_int = i64;
             pushInteger(lua, t_int, i.*, buffer.message);
             Iter.advanceByType(i, t_int);
         },
 
-        Protocol.Tags.Str8 => {
+        .Str8 => {
             const t_len_int = u8;
             const len = peekInteger(t_len_int, i.*, buffer.message);
             Iter.advanceByType(i, t_len_int);
@@ -556,7 +556,7 @@ pub fn pushMessagePackInternal(lua: *Lua, i: *usize, buffer: MessagePackBuffer) 
             pushString(lua, i.*, buffer.message, @intCast(len));
             Iter.advance(i, len);
         },
-        Protocol.Tags.Str16 => {
+        .Str16 => {
             const t_len_int = u16;
             const len = peekInteger(t_len_int, i.*, buffer.message);
             Iter.advanceByType(i, t_len_int);
@@ -564,7 +564,7 @@ pub fn pushMessagePackInternal(lua: *Lua, i: *usize, buffer: MessagePackBuffer) 
             pushString(lua, i.*, buffer.message, @intCast(len));
             Iter.advance(i, len);
         },
-        Protocol.Tags.Str32 => {
+        .Str32 => {
             const t_len_int = u32;
             const len = peekInteger(t_len_int, i.*, buffer.message);
             Iter.advanceByType(i, t_len_int);
@@ -573,14 +573,14 @@ pub fn pushMessagePackInternal(lua: *Lua, i: *usize, buffer: MessagePackBuffer) 
             Iter.advance(i, len);
         },
 
-        Protocol.Tags.Float32 => {
+        .Float32 => {
             const t_float = f32;
             const value = peekFloat(t_float, i.*, buffer.message);
             Iter.advanceByType(i, t_float);
 
             lua.pushNumber(@as(LuaNumber, @floatCast(value)));
         },
-        Protocol.Tags.Float64 => {
+        .Float64 => {
             const t_float = f64;
             const value = peekFloat(t_float, i.*, buffer.message);
             Iter.advanceByType(i, t_float);
@@ -589,7 +589,7 @@ pub fn pushMessagePackInternal(lua: *Lua, i: *usize, buffer: MessagePackBuffer) 
         },
 
         // At the time of writing, only map32 format is supported by the serializer
-        Protocol.Tags.Map32 => {
+        .Map32 => {
             const t_int = u32;
             const kvp_count: u32 = peekInteger(t_int, i.*, buffer.message);
             Iter.advanceByType(i, t_int);
