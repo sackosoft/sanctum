@@ -1,13 +1,14 @@
-set -euox pipefail
+set -euo pipefail
 
-exe="REDACTED"
+exe=$1
 
 zig build
 
-if [ $# -gt 0 ]; then
+if [ $# -gt 1 ]; then
   args=(${@:2})
-  echo "Invoking with args: '$args'"
-  gdb -tui -q -ex=r -x tui.txt --args $exe $args
+  echo "Invoking with args:"
+  echo "  ${args[@]}"
+  gdb -tui -q -ex=r -x tui.txt --args $exe "${args[@]}"
 else
   echo "Invoking without args"
   gdb -tui -q -ex=r -x tui.txt $exe

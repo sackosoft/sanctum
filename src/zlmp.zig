@@ -502,6 +502,19 @@ pub fn pushMessagePackInternal(lua: *Lua, i: *usize, buffer: MessagePackBuffer) 
                 _ = lua.pushString(str);
             },
 
+            // At the time of writing, only map32 format is supported by the serializer; however,
+            // we will implement support for all of the map types, since the deserialization work
+            // is not blocked by the same issue.
+            //
+            // The serializer does not support all types because we need to know ahead of time,
+            // before iterating the table, how many bytes to skip for the number of pairs in
+            // the map. I was being lazy and didn't want to figure that out yet, so we just always
+            // use the map32 format.
+            @intFromEnum(Protocol.Tags.FixmapMin)...@intFromEnum(Protocol.Tags.FixmapMax) => {
+                const kvp_count: u32 = @intCast(@as(u4, @truncate(tag_value)));
+                try pushTable(lua, i, buffer, kvp_count);
+            },
+
             @intFromEnum(Protocol.Tags.Int8) => {
                 const t_int = i8;
                 pushInteger(lua, t_int, i.*, buffer.message);
@@ -571,11 +584,6 @@ pub fn pushMessagePackInternal(lua: *Lua, i: *usize, buffer: MessagePackBuffer) 
             // before iterating the table, how many bytes to skip for the number of pairs in
             // the map. I was being lazy and didn't want to figure that out yet, so we just always
             // use the map32 format.
-            @intFromEnum(Protocol.Tags.FixmapMin)...@intFromEnum(Protocol.Tags.FixmapMax) => {
-                const kvp_count: u32 = @intCast(@as(u4, @truncate(tag_value)));
-                try pushTable(lua, i, buffer, kvp_count);
-            },
-
             @intFromEnum(Protocol.Tags.Map16) => {
                 const t_int = u16;
                 const kvp_count: u32 = @intCast(peekInteger(t_int, i.*, buffer.message));
@@ -601,6 +609,16 @@ pub fn pushMessagePackInternal(lua: *Lua, i: *usize, buffer: MessagePackBuffer) 
     std.debug.assert(i.* == buffer.message.len);
 }
 
+fn pushInteger(lua: *Lua, comptime T: type, i: usize, message: []const u8) void {
+    const value = peekInteger(T, i, message);
+    lua.pushInteger(@as(LuaInteger, @intCast(value)));
+}
+
+fn pushString(lua: *Lua, i: usize, message: []const u8, len: usize) void {
+    const str = message[i..(i + len)];
+    _ = lua.pushString(str);
+}
+
 fn pushTable(lua: *Lua, i: *usize, buffer: MessagePackBuffer, kvp_count: u32) anyerror!void {
     lua.newTable();
 
@@ -610,16 +628,6 @@ fn pushTable(lua: *Lua, i: *usize, buffer: MessagePackBuffer, kvp_count: u32) an
 
         lua.setTable(-3); // table[key] = value
     }
-}
-
-fn pushInteger(lua: *Lua, comptime T: type, i: usize, message: []const u8) void {
-    const value = peekInteger(T, i, message);
-    lua.pushInteger(@as(LuaInteger, @intCast(value)));
-}
-
-fn pushString(lua: *Lua, i: usize, message: []const u8, len: usize) void {
-    const str = message[i..(i + len)];
-    _ = lua.pushString(str);
 }
 
 /// Reads the integer of size `T` from the given Message Pack message at index `i`.
