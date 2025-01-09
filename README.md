@@ -22,8 +22,6 @@ single node (no networking, no persistence).
 
 - [ ] Docunomicon - Definition and example of Lua spells
     - [x] Minimal documentation for spells in the runtime.
-    - [ ] Detailed documentation for spells in the runtime.
-    - [ ] Exhaustive documentation for spells in the runtime.
 - [ ] Spell Casting
     - [x] Spells can be loaded dynamically into the sanctum from files.
         - [ ] Spells are loaded and unloaded with the prepare and unprepare lifecycle hooks.
@@ -34,9 +32,13 @@ single node (no networking, no persistence).
     - [x] Malformed spells (spell parse failure) are handled gracefully.
         - [x] Handle parsing failing line number from errors Lua message.
     - [x] Unstable magic (internal spell failures) is handled gracefully.
-    - [ ] Spells can consume magical energy (events).
-        - [ ] Magical energies are always internally stored as MessagePack buffers.
-    - [ ] Spells can produce magical energy or act as a terminal action, producing nothing.
+    - [x] Add support to serialize and deserialize magical energies as MessagePack buffers.
+    - [x] Spells can produce magical energy or act as a terminal action, producing nothing.
+    - [ ] Spells can be bound to energy streams subscriptions.
+        - [ ] Support for topic-based subscriptions
+        - [ ] Support for filter-based subscriptions
+    - [ ] Build a proof of concept sanctum application for demo/validation.
+        - [ ] Should sanctum spells be bundled/packaged into an app?
     - [ ] Remove this section from the README, create release notes and initial release artifacts.
 
 ## v0.2 Prototype - Pending

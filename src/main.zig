@@ -146,7 +146,24 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
     try checkedDoString(lua, command.event_seed_lua);
     try prepareSpellCall(lua, "cast", 1);
 
-    try guardTypeAt(lua, LuaType.table, -1);
+    try popPushMessagePackRoundTrip(lua, alloc, command, LuaType.table);
+
+    var i: usize = 0;
+    const runaway_loop_bound = 1_000;
+    while (i < runaway_loop_bound) : (i += 1) {
+        try checkedCall(lua, command);
+        if (lua.isNil(-1)) {
+            break;
+        }
+
+        try prepareSpellCall(lua, "cast", 1);
+        try popPushMessagePackRoundTrip(lua, alloc, command, LuaType.table);
+    }
+}
+
+fn popPushMessagePackRoundTrip(lua: *Lua, alloc: std.mem.Allocator, command: RunCommandArgs, expected_type: LuaType) !void {
+    try guardTypeAt(lua, expected_type, -1);
+
     const event: zlmp.MessagePackBuffer = try zlmp.toMessagePack(lua, -1, alloc);
     defer alloc.free(event.message);
 
@@ -156,22 +173,17 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
 
     lua.pop(1);
     try zlmp.pushMessagePack(lua, event);
-
-    var i: usize = 0;
-    while (!shouldStop(lua, i)) : (i += 1) {
-        try checkedCall(lua, command);
-        try prepareSpellCall(lua, "cast", 1);
-
-        if (false and command.hasFlag(RunCommandArgs.Flags.DumpEvents) and lua.isTable(-1)) {
-            try dumpEvent(event.message);
-        }
-    }
 }
 
 fn dumpEvent(message: []const u8) !void {
     var buf: [8192]u8 = undefined;
     @memset(&buf, 0);
     _ = std.base64.standard.Encoder.encode(&buf, message);
+    if (std.mem.lastIndexOf(u8, &buf, "=")) |i| {
+        buf[i] = '%';
+        buf[i + 1] = '3';
+        buf[i + 2] = 'D';
+    }
     std.debug.print("https://msgpack.dbrgn.ch/#base64={s}\n", .{buf});
 }
 
@@ -231,12 +243,6 @@ fn prepareSpellCall(lua: *Lua, function_name: []const u8, stack_argc: u8) !void 
         const insert_index = @as(i32, -1) - @as(i32, @intCast(stack_argc));
         lua.insert(insert_index);
     }
-}
-
-fn shouldStop(lua: *Lua, i: usize) bool {
-    // For now, it is an explicit stop condition when the spell returns `nil` instead of producing a new event.
-    // Additionally, we will forcefully bound execution to 1000 iterations for now, to prevent runaway execution.
-    return lua.isNil(-1) or i > 1_000;
 }
 
 fn checkedDoString(lua: *Lua, source: [:0]const u8) !void {
