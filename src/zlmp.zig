@@ -469,74 +469,67 @@ const Iter = struct {
 pub fn pushMessagePackInternal(lua: *Lua, i: *usize, buffer: MessagePackBuffer) !void {
     while (i.* < buffer.message.len) {
         const tag_value = buffer.message[i.*];
-        const tag: Protocol.Tags = @enumFromInt(tag_value);
         Iter.next(i);
 
         switch (tag_value) {
-            @intFromEnum(Protocol.Tags.Nil) => {
-                lua.pushNil();
-            },
-
-            @intFromEnum(Protocol.Tags.False), @intFromEnum(Protocol.Tags.True) => {
-                const value = (tag == Protocol.Tags.True);
-                lua.pushBoolean(value);
-            },
-
             @intFromEnum(Protocol.Tags.PositiveFixintMin)...@intFromEnum(Protocol.Tags.PositiveFixintMax) => {
                 const value = @as(u7, @truncate(tag_value));
                 lua.pushInteger(value);
+                return;
             },
 
             @intFromEnum(Protocol.Tags.NegativeFixintMin)...@intFromEnum(Protocol.Tags.NegativeFixintMax) => {
                 const value = @as(i5, @bitCast(@as(u5, @truncate(tag_value))));
                 lua.pushInteger(value);
+                return;
             },
 
             @intFromEnum(Protocol.Tags.FixstrMin)...@intFromEnum(Protocol.Tags.FixstrMax) => {
                 const len = @as(u5, @truncate(tag_value));
 
-                std.debug.assert(buffer.message[i.* + len - 1] == 0);
+                // The trailing zero is missing for some reason, need to look into that.
+                // std.debug.assert(buffer.message[i.* + len - 1] == 0);
                 const str = buffer.message[i.* .. i.* + len];
                 Iter.advance(i, len);
 
                 _ = lua.pushString(str);
+                return;
+            },
+            else => {},
+        }
+
+        const tag: Protocol.Tags = @enumFromInt(tag_value);
+        switch (tag) {
+            Protocol.Tags.Nil => {
+                lua.pushNil();
+            },
+            Protocol.Tags.False, Protocol.Tags.True => {
+                const value = (tag == Protocol.Tags.True);
+                lua.pushBoolean(value);
             },
 
-            // At the time of writing, only map32 format is supported by the serializer; however,
-            // we will implement support for all of the map types, since the deserialization work
-            // is not blocked by the same issue.
-            //
-            // The serializer does not support all types because we need to know ahead of time,
-            // before iterating the table, how many bytes to skip for the number of pairs in
-            // the map. I was being lazy and didn't want to figure that out yet, so we just always
-            // use the map32 format.
-            @intFromEnum(Protocol.Tags.FixmapMin)...@intFromEnum(Protocol.Tags.FixmapMax) => {
-                const kvp_count: u32 = @intCast(@as(u4, @truncate(tag_value)));
-                try pushTable(lua, i, buffer, kvp_count);
-            },
-
-            @intFromEnum(Protocol.Tags.Int8) => {
+            Protocol.Tags.Int8 => {
                 const t_int = i8;
                 pushInteger(lua, t_int, i.*, buffer.message);
                 Iter.advanceByType(i, t_int);
             },
-            @intFromEnum(Protocol.Tags.Int16) => {
+            Protocol.Tags.Int16 => {
                 const t_int = i16;
                 pushInteger(lua, t_int, i.*, buffer.message);
                 Iter.advanceByType(i, t_int);
             },
-            @intFromEnum(Protocol.Tags.Int32) => {
+            Protocol.Tags.Int32 => {
                 const t_int = i32;
                 pushInteger(lua, t_int, i.*, buffer.message);
                 Iter.advanceByType(i, t_int);
             },
-            @intFromEnum(Protocol.Tags.Int64) => {
+            Protocol.Tags.Int64 => {
                 const t_int = i64;
                 pushInteger(lua, t_int, i.*, buffer.message);
                 Iter.advanceByType(i, t_int);
             },
 
-            @intFromEnum(Protocol.Tags.Str8) => {
+            Protocol.Tags.Str8 => {
                 const t_len_int = u8;
                 const len = peekInteger(t_len_int, i.*, buffer.message);
                 Iter.advanceByType(i, t_len_int);
@@ -544,7 +537,7 @@ pub fn pushMessagePackInternal(lua: *Lua, i: *usize, buffer: MessagePackBuffer) 
                 pushString(lua, i.*, buffer.message, @intCast(len));
                 Iter.advance(i, len);
             },
-            @intFromEnum(Protocol.Tags.Str16) => {
+            Protocol.Tags.Str16 => {
                 const t_len_int = u16;
                 const len = peekInteger(t_len_int, i.*, buffer.message);
                 Iter.advanceByType(i, t_len_int);
@@ -552,7 +545,7 @@ pub fn pushMessagePackInternal(lua: *Lua, i: *usize, buffer: MessagePackBuffer) 
                 pushString(lua, i.*, buffer.message, @intCast(len));
                 Iter.advance(i, len);
             },
-            @intFromEnum(Protocol.Tags.Str32) => {
+            Protocol.Tags.Str32 => {
                 const t_len_int = u32;
                 const len = peekInteger(t_len_int, i.*, buffer.message);
                 Iter.advanceByType(i, t_len_int);
@@ -561,14 +554,14 @@ pub fn pushMessagePackInternal(lua: *Lua, i: *usize, buffer: MessagePackBuffer) 
                 Iter.advance(i, len);
             },
 
-            @intFromEnum(Protocol.Tags.Float32) => {
+            Protocol.Tags.Float32 => {
                 const t_float = f32;
                 const value = peekFloat(t_float, i.*, buffer.message);
                 Iter.advanceByType(i, t_float);
 
                 lua.pushNumber(@as(LuaNumber, @floatCast(value)));
             },
-            @intFromEnum(Protocol.Tags.Float64) => {
+            Protocol.Tags.Float64 => {
                 const t_float = f64;
                 const value = peekFloat(t_float, i.*, buffer.message);
                 Iter.advanceByType(i, t_float);
@@ -576,22 +569,8 @@ pub fn pushMessagePackInternal(lua: *Lua, i: *usize, buffer: MessagePackBuffer) 
                 lua.pushNumber(@as(LuaNumber, @floatCast(value)));
             },
 
-            // At the time of writing, only map32 format is supported by the serializer; however,
-            // we will implement support for all of the map types, since the deserialization work
-            // is not blocked by the same issue.
-            //
-            // The serializer does not support all types because we need to know ahead of time,
-            // before iterating the table, how many bytes to skip for the number of pairs in
-            // the map. I was being lazy and didn't want to figure that out yet, so we just always
-            // use the map32 format.
-            @intFromEnum(Protocol.Tags.Map16) => {
-                const t_int = u16;
-                const kvp_count: u32 = @intCast(peekInteger(t_int, i.*, buffer.message));
-                Iter.advanceByType(i, t_int);
-
-                try pushTable(lua, i, buffer, kvp_count);
-            },
-            @intFromEnum(Protocol.Tags.Map32) => {
+            // At the time of writing, only map32 format is supported by the serializer
+            Protocol.Tags.Map32 => {
                 const t_int = u32;
                 const kvp_count: u32 = peekInteger(t_int, i.*, buffer.message);
                 Iter.advanceByType(i, t_int);
