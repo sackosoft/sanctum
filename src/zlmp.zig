@@ -639,23 +639,9 @@ fn peekInteger(comptime T: type, i: usize, message: []const u8) T {
 /// Floating point numbers in the Message Pack specification are always in big-endian format.
 /// This function handles conversion to the native endianess.
 fn peekFloat(comptime T: type, i: usize, message: []const u8) T {
-    const TSizedUint = switch (T) {
-        f16 => u16,
-        f32 => u32,
-        f64 => u64,
-        f80 => u80,
-        f128 => u128,
-        else => {
-            @compileError("Unsupported float type '" ++ @typeName(T) ++ "': peekFloat(T, ...) only supports one of (f16, f32, f64, f80, f128)");
-        },
-    };
-
+    const TSizedUint = std.meta.Int(.unsigned, @bitSizeOf(T));
     var buffer: TSizedUint = undefined;
     @memcpy(@as(*[@sizeOf(TSizedUint)]u8, @ptrCast(&buffer)), message[i .. i + @sizeOf(T)]);
-
-    if (native_endianness == .little) {
-        buffer = @byteSwap(buffer);
-    }
-
-    return @as(*T, @ptrCast(&buffer)).*;
+    const native_buffer = std.mem.nativeToBig(TSizedUint, buffer);
+    return @bitCast(native_buffer);
 }
