@@ -1,5 +1,3 @@
 .zig-cache/
 zig-out/
-tui.txt
 gdb.txt
-debug.sh

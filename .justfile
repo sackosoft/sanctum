@@ -8,7 +8,7 @@ sample_spell := shell(abs, "./src/tests/test-suite/decrement-counter/spell.lua")
 sample_event := shell(abs, "./src/tests/test-suite/decrement-counter/seed.lua")
 
 sanctum := shell(abs, "./zig-out/bin/sanctum")
-debug := shell(abs, "./debug.sh")
+debug := shell(abs, "./tools/debug.sh")
 
 test: build (_test regression_tester sanctum regression_suite "--test")
 freeze: build (_test regression_tester sanctum regression_suite "--freeze")
