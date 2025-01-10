@@ -1,14 +1,50 @@
+<div align="center">
+
 # Sanctum
+**Welcome, sorcerer, to the Sanctum. Write spells in Lua for transforming and acting on event streams of magical energy.**
 
-Welcome, sorcerer, to the Sanctum. Write spells in Lua for transforming and acting on event streams of magical energy.
+![GitHub License](https://img.shields.io/github/license/sackosoft/sanctum)
 
-## What is Sanctum?
+<!--
+TODO: Capture attention with a visualization, diagram, demo or other visual placeholder here.
+![Placeholder]()
+-->
 
-Sanctum is a platform that enables sorcerers to craft powerful spells that process and transform event streams. Sorcerers
-focus on writing spells in their preferred language, while Sanctum handles the complexities of event storage, state and routing
-these energies across the ethereal planes.
+</div>
+
+## About
+
+Sanctum is an event streaming, storage and processing platform. It lets you, sorcer, craft powerful spells in Lua to process and transform
+streams of events. Sanctum handles the complexities of storage, state and routing these energies across the ethereal planes,
+so that you can focus on writing the spells for your use case.
 
 For more detailed reference information and documentation, refer to the [`docunomicon`](./docunomicon).
+
+## Features
+
+* ✨ **Spells**: User-defined Lua code for actions or transformations, invoked with events from the event stream.
+* 🔓 **Flexible**: Write stateful or stateless spells, use the storage system provided by the runtime or bring your own backend.
+* ⏩ **Fast**: Written in Zig so that you don't have to worry about performance.
+
+## Installation
+
+Options for installing and hosting Sanctum can be found in the [`docunomicon`](./docunomicon/install.md).
+
+## Usage
+
+Sanctum uses the [`just`][JUST] command runner. Refer to [`CONTRIBUTING.md`](./CONTRIBUTING.md) for more information about
+dependencies. The commonly used commands are described below.
+
+```
+`just test` - Builds and runs Sanctum against the regression test suite, compares Sanctum output against the "golden output" files.
+`just freeze` - Builds and runs Sanctum against the regression test suite, updates "golden output" files with output from Sanctum.
+`just debug` - Builds and runs Sanctum against a well-known regression test case in [GDB - The GNU Project Debugger][GDB].
+```
+
+[JUST]: https://github.com/casey/just
+[GDB]: https://www.sourceware.org/gdb/download/
+
+<br>
 
 ## Roadmap
 
