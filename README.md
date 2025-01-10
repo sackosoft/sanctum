@@ -35,11 +35,14 @@ Options for installing and hosting Sanctum can be found in the [`docunomicon`](.
 Sanctum uses the [`just`][JUST] command runner. Refer to [`CONTRIBUTING.md`](./CONTRIBUTING.md) for more information about
 dependencies. The commonly used commands are described below.
 
-```
-`just test` - Runs Sanctum against the regression test suite, compares output against "golden output" files.
-`just freeze` - Runs Sanctum updating the regression test suite "golden output" files with current output.
-`just debug` - Runs Sanctum in [GDB - The GNU Project Debugger][GDB] using a regression test as input.
-```
+- `just test`
+    - Runs Sanctum against the regression test suite, compares output against "golden output" files.
+
+- `just freeze`
+    - Runs Sanctum updating the regression test suite "golden output" files with current output.
+
+- `just debug`
+    - Runs Sanctum in [GDB - The GNU Project Debugger][GDB] using a regression test as input.
 
 [JUST]: https://github.com/casey/just
 [GDB]: https://www.sourceware.org/gdb/download/
