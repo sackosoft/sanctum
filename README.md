@@ -14,9 +14,9 @@ TODO: Capture attention with a visualization, diagram, demo or other visual plac
 
 ## About
 
-Sanctum is an event streaming, storage and processing platform. It lets you, sorcer, craft powerful spells in Lua to process and transform
-streams of events. Sanctum handles the complexities of storage, state and routing these energies across the ethereal planes,
-so that you can focus on writing the spells for your use case.
+Sanctum is an event streaming, storage and processing platform. It lets you, the sorcerer, craft powerful spells in Lua to process
+and transform streams of events. Sanctum handles the complexities of storage, state and routing these energies across the ethereal
+planes, so that you can focus on writing the spells for your use case.
 
 For more detailed reference information and documentation, refer to the [`docunomicon`](./docunomicon).
 
