@@ -36,9 +36,9 @@ Sanctum uses the [`just`][JUST] command runner. Refer to [`CONTRIBUTING.md`](./C
 dependencies. The commonly used commands are described below.
 
 ```
-`just test` - Builds and runs Sanctum against the regression test suite, compares Sanctum output against the "golden output" files.
-`just freeze` - Builds and runs Sanctum against the regression test suite, updates "golden output" files with output from Sanctum.
-`just debug` - Builds and runs Sanctum against a well-known regression test case in [GDB - The GNU Project Debugger][GDB].
+`just test` - Runs Sanctum against the regression test suite, compares output against "golden output" files.
+`just freeze` - Runs Sanctum updating the regression test suite "golden output" files with current output.
+`just debug` - Runs Sanctum in [GDB - The GNU Project Debugger][GDB] using a regression test as input.
 ```
 
 [JUST]: https://github.com/casey/just
