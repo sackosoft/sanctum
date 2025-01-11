@@ -3,6 +3,7 @@
 # Sanctum
 **Welcome, sorcerer, to the Sanctum. Write spells in Lua for transforming and acting on event streams of magical energy.**
 
+![Regression Tests Badge](https://img.shields.io/github/actions/workflow/status/sackosoft/sanctum/regression-tests.yml?label=regression%20tests)
 ![GitHub License](https://img.shields.io/github/license/sackosoft/sanctum)
 
 <!--
