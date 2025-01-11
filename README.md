@@ -107,6 +107,12 @@ Sanctum fully featured as an MVP.
   - [ ] Documentation
   - [ ] Performance optimization
 
+## Work Triage
+
+- [ ] Wrap the Lua VM so that detailed telemetry can be emitted, per instance.
+    - memory usage, spell execution count+time, event input and output counters.
+- [ ] Support N:M event inputs and outputs for spells (currently only supports 1:0 and 1:1).
+
 ## Glossary
 
 Novice sorcers may struggle to uncover the mysteries of the Sanctum:
