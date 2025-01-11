@@ -1,27 +1,24 @@
 set shell := ["/bin/bash", "-uc"]
 
-abs := "readlink -f $1"
-regression_tester := shell(abs, "./src/tests/regression.py")
-regression_suite := shell(abs, "./src/tests/test-suite/")
+root := justfile_directory()
+regression_tester := root / "src/tests/regression.py"
+regression_suite := root / "src/tests/test-suite"
+sample_spell := root / "src/tests/test-suite/decrement-counter/spell.lua"
+sample_event := root / "src/tests/test-suite/decrement-counter/seed.lua"
+sanctum := root / "zig-out/bin/sanctum"
+debug := root / "tools/debug.sh"
 
-sample_spell := shell(abs, "./src/tests/test-suite/decrement-counter/spell.lua")
-sample_event := shell(abs, "./src/tests/test-suite/decrement-counter/seed.lua")
+test: build
+    python3 {{regression_tester}} {{sanctum}} {{regression_suite}} --test
 
-sanctum := shell(abs, "./zig-out/bin/sanctum")
-debug := shell(abs, "./tools/debug.sh")
+freeze: build
+    python3 {{regression_tester}} {{sanctum}} {{regression_suite}} --freeze
 
-test: build (_test regression_tester sanctum regression_suite "--test")
-freeze: build (_test regression_tester sanctum regression_suite "--freeze")
-_test script executable suite flags:
-    @python3 {{script}} {{executable}} {{suite}} {{flags}}
+run: build
+    {{sanctum}} cast {{sample_spell}} --seed {{sample_event}} --dump-events
 
-run: build (_run sanctum sample_spell sample_event)
-_run executable spell event:
-    @{{executable}} "cast" {{sample_spell}} "--seed" {{sample_event}} "--dump-events"
-
-debug: build (_debug debug sanctum sample_spell sample_event)
-_debug debug executable spell event:
-    @{{debug}} {{executable}} "cast" {{sample_spell}} "--seed" {{sample_event}} "--dump-events"
+debug: build
+    {{debug}} {{sanctum}} cast {{sample_spell}} --seed {{sample_event}} --dump-events
 
 build:
     zig build
