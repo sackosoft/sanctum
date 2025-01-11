@@ -9,9 +9,12 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
+    - name: ⬇️ Checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: true  # or 'recursive' if you have nested submodules
 
-    - name: Cache dependencies
+    - name: 📦 Cache
       uses: actions/cache@v3
       id: cache-deps
       with:
@@ -23,24 +26,24 @@ jobs:
           ~/.just
         key: ${{ runner.os }}-deps-0001
 
-    - name: Set up Python
+    - name: 🐍 Install Python
       if: steps.cache-deps.outputs.cache-hit != 'true'
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
-    - name: Install Zig
+    - name: (Z) Install Zig
       if: steps.cache-deps.outputs.cache-hit != 'true'
       uses: goto-bus-stop/setup-zig@v2
       with:
         version: master
 
-    - name: Install just
+    - name: 〰️ Install just
       if: steps.cache-deps.outputs.cache-hit != 'true'
       uses: extractions/setup-just@v1
       with:
         just-version: '*'
 
-    - name: Run tests
+    - name: ▶️ Run tests
       shell: bash
       run: just test
