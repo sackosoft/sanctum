@@ -32,13 +32,42 @@ pub fn main() !void {
     defer alloc.free(run_command_args.spell.lua);
     defer alloc.free(run_command_args.event_seed_lua);
 
-    return runCommand(alloc, run_command_args) catch |e| {
-        if (e == error.ExplainedExiting) {
-            std.process.exit(1);
-        } else {
-            return e;
+    const n = 1_000;
+    var min: u64 = std.math.maxInt(u64);
+    var max: u64 = 0;
+    var percent: u32 = 0;
+    var measurements: [n]u64 = undefined;
+    for (0..n) |i| {
+        var timer = try std.time.Timer.start();
+
+        runCommand(alloc, run_command_args) catch |e| {
+            if (e == error.ExplainedExiting) {
+                std.process.exit(1);
+            } else {
+                return e;
+            }
+        };
+
+        const elapsed = timer.read();
+        measurements[i] = elapsed;
+        min = @min(min, elapsed);
+        max = @max(max, elapsed);
+
+        const pct = @divFloor(@as(u32, @intCast(i * 100)), n);
+        if (pct != percent) {
+            percent = pct;
+            std.debug.print("{d}%\n", .{pct});
         }
-    };
+    }
+
+    var sum: f128 = 0;
+    for (measurements) |v| {
+        sum += @floatFromInt(v);
+    }
+    const avg = (sum / @as(f128, @floatFromInt(n))) / std.time.ns_per_ms;
+    const min_ms = @as(f128, @floatFromInt(min)) / std.time.ns_per_ms;
+    const max_ms = @as(f128, @floatFromInt(max)) / std.time.ns_per_ms;
+    std.debug.print("Over {d} iterations, executing spell took {d:4.3}ms on average. Range: [{d:4.3}, {d:4.3}]\n", .{ n, avg, min_ms, max_ms });
 }
 
 const RunCommandArgs = struct {
