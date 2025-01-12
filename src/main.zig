@@ -32,6 +32,21 @@ pub fn main() !void {
     defer alloc.free(run_command_args.spell.lua);
     defer alloc.free(run_command_args.event_seed_lua);
 
+    var lua = try Lua.init(alloc);
+    defer lua.deinit();
+
+    // Allows for `print()`, among other things
+    lua.openBase();
+
+    // Allows for `string.format()`, among other things.
+    lua.openString();
+
+    // The spell is a table that sits on the bottom of the stack. At present, it should never
+    // be mutated and it should never move on the stack. Calls to functions inside this table
+    // are made in order to "prepare" and "cast" the spell.
+    try checkedDoString(lua, run_command_args.spell.lua);
+    try validateCallable(lua, "cast", run_command_args.spell.lua);
+
     const n = 1_000;
     var min: u64 = std.math.maxInt(u64);
     var max: u64 = 0;
@@ -40,7 +55,7 @@ pub fn main() !void {
     for (0..n) |i| {
         var timer = try std.time.Timer.start();
 
-        runCommand(alloc, run_command_args) catch |e| {
+        runCommand(alloc, run_command_args, lua) catch |e| {
             if (e == error.ExplainedExiting) {
                 std.process.exit(1);
             } else {
@@ -156,22 +171,7 @@ fn loadAdditionalFlags(args: [][:0]u8) !u32 {
     return result;
 }
 
-fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
-    var lua = try Lua.init(alloc);
-    defer lua.deinit();
-
-    // Allows for `print()`, among other things
-    lua.openBase();
-
-    // Allows for `string.format()`, among other things.
-    lua.openString();
-
-    // The spell is a table that sits on the bottom of the stack. At present, it should never
-    // be mutated and it should never move on the stack. Calls to functions inside this table
-    // are made in order to "prepare" and "cast" the spell.
-    try checkedDoString(lua, command.spell.lua);
-    try validateCallable(lua, "cast", command.spell.lua);
-
+fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs, lua: *Lua) !void {
     // The seed event is placed on top of the stack to prepare for execution. I believe this is
     // temporary, for the POC-phase of the project, and will eventually be replaced by an event
     // [de]serialization layer with an event queues to pull events from.
@@ -191,6 +191,8 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
         try prepareSpellCall(lua, "cast", 1);
         try popPushMessagePackRoundTrip(lua, alloc, command, LuaType.table);
     }
+
+    lua.pop(1);
 }
 
 fn popPushMessagePackRoundTrip(lua: *Lua, alloc: std.mem.Allocator, command: RunCommandArgs, expected_type: LuaType) !void {
