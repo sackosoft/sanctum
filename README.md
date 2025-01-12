@@ -48,7 +48,16 @@ dependencies. The commonly used commands are described below.
 [JUST]: https://github.com/casey/just
 [GDB]: https://www.sourceware.org/gdb/download/
 
-<br>
+## Spell Casting Benchmarks
+
+| Date | Test | Test Duration (ms) | Min Duration (ms) | Max Duration (ms) |
+|---|---|---|---|---|
+| January 11, 2025 | 1x Spell, No Serialization, Reuse Lua VM | `1.455` | `0.960` | `4.532` |
+| January 11, 2025 | 10x Spell Cast, No Serialization, Reuse Lua VM | `2.249` | `1.683` | `5.787` |
+| January 11, 2025 | 10x Spell Cast, Message Pack round trip, Reuse Lua VM | `6.656` | `5.133` | `10.705` |
+| January 11, 2025 | 10x Spell Cast, Message Pack round trip, Recreate Lua VM | `12.805` | `12.648` | `17.646` |
+
+Code for individual benchmarks can be found in branches `benchmarks/<date>`.
 
 ## Roadmap
 
