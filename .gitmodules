@@ -1,6 +1,3 @@
 [submodule "submodules/--force"]
 	path = submodules/--force
 	url = https://github.com/freegamerskids/ziglua
-[submodule "submodules/ziglua"]
-	path = submodules/ziglua
-	url = https://github.com/freegamerskids/ziglua
