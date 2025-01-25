@@ -80,14 +80,13 @@ pub fn build(b: *std.Build) void {
         .root_module = exe_mod,
     });
 
-    const ziglua_dep = b.dependency("ziglua", .{
+    const luajit_dep = b.dependency("luajit", .{
         .target = target,
         .optimize = optimize,
-        .lang = .lua54,
     });
-    const ziglua = ziglua_dep.module("ziglua");
-    exe.root_module.addImport("ziglua", ziglua);
-    lib_static_zlmp.root_module.addImport("ziglua", ziglua);
+    const luajit = luajit_dep.module("luajit");
+    exe.root_module.addImport("ziglua", luajit);
+    lib_static_zlmp.root_module.addImport("ziglua", luajit);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default

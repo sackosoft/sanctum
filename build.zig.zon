@@ -2,9 +2,10 @@
     .name = "sanctum",
     .version = "0.0.0",
     .dependencies = .{
-        .ziglua = .{
-            .path = "./submodules/ziglua",
-        }
+        .luajit = .{
+            .url = "git+https://github.com/sackosoft/zig-luajit#9543a4ca27bf523a2921209a6eb72deb3f83abb8",
+            .hash = "12202f972431c4b458cb8baeb508d2740ce6456702bd73ba3b8cf7633ab9ce772a4c",
+        },
     },
     .paths = .{
         "build.zig",
