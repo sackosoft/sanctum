@@ -1,6 +1,7 @@
 <div align="center">
 
 # Sanctum
+
 **Welcome, sorcerer, to the Sanctum. Write spells in Lua for transforming and acting on event streams of magical energy.**
 
 ![Regression Tests Badge](https://img.shields.io/github/actions/workflow/status/sackosoft/sanctum/regression-tests.yml?label=regression%20tests)
@@ -13,6 +14,7 @@ TODO: Capture attention with a visualization, diagram, demo or other visual plac
 
 </div>
 
+
 ## About
 
 Sanctum is an event streaming, storage and processing platform. It lets you, the sorcerer, craft powerful spells in Lua to process
@@ -21,15 +23,18 @@ planes, so that you can focus on writing the spells for your use case.
 
 For more detailed reference information and documentation, refer to the [`docunomicon`](./docunomicon).
 
+
 ## Features
 
 * ✨ **Spells**: User-defined Lua code for actions or transformations, invoked with events from the event stream.
 * 🔓 **Flexible**: Write stateful or stateless spells, use the storage system provided by the runtime or bring your own backend.
 * ⏩ **Fast**: Written in Zig so that you don't have to worry about performance.
 
+
 ## Installation
 
 Options for installing and hosting Sanctum can be found in the [`docunomicon`](./docunomicon/install.md).
+
 
 ## Usage
 
@@ -48,22 +53,23 @@ dependencies. The commonly used commands are described below.
 [JUST]: https://github.com/casey/just
 [GDB]: https://www.sourceware.org/gdb/download/
 
-## Spell Casting Benchmarks
 
-| Date | Test | Test Duration (ms) | Min Duration (ms) | Max Duration (ms) |
-|---|---|---|---|---|
-| January 11, 2025 | 1x Spell, No Serialization, Reuse Lua VM | `1.455` | `0.960` | `4.532` |
-| January 11, 2025 | 10x Spell Cast, No Serialization, Reuse Lua VM | `2.249` | `1.683` | `5.787` |
-| January 11, 2025 | 10x Spell Cast, Message Pack round trip, Reuse Lua VM | `6.656` | `5.133` | `10.705` |
-| January 11, 2025 | 10x Spell Cast, Message Pack round trip, Recreate Lua VM | `12.805` | `12.648` | `17.646` |
+## Spell Casting Micro Benchmarks
 
-Code for individual benchmarks can be found in branches `benchmarks/<date>`.
+Sanctum is designed for realtime event streaming workloads. The switch from Lua 5.4 (provided by [`ziglua`][ZIGLUA-REPO]) to LuaJIT
+(provided by [`zig-luajit`][ZIGLUAJIT-REPO]) has improved a target spell casting benchmarks by 36%. The overhead for Sanctum to cast
+Lua spells is around ~500 nanoseconds, based on January 2025 benchmarks. As a result, Sanctum can cast millions of spells per second
+per core, even on modest hardware like my Intel Xeon E5-2680 -- a processor released in 2013.
+
+Sanctum will work best if your workload is bound by the flow of magical energy rather than the processing of those energies.
+
+[ZIGLUA-REPO]: https://github.com/natecraddock/ziglua
+[ZIGLUAJIT-REPO]: https://github.com/sackosoft/zig-luajit
+
 
 ## Roadmap
 
-# Release Roadmap
-
-## v0.1 Proof of Concept - **Active**
+### v0.1 Proof of Concept - **Active**
 
 Demonstrates event processing with Spells on a throw-away runtime. Sanctum runs as a CLI application and
 covered by a suite of regression tests to enable building and refactoring the core engine. Runs on a
@@ -86,11 +92,12 @@ single node (no networking, no persistence).
     - [ ] Spells can be bound to energy streams subscriptions.
         - [ ] Support for topic-based subscriptions
         - [ ] Support for filter-based subscriptions
+    - [x] Migrate from Lua 5.4 to LuaJIT.
     - [ ] Build a proof of concept sanctum application for demo/validation.
         - [ ] Should sanctum spells be bundled/packaged into an app?
     - [ ] Remove this section from the README, create release notes and initial release artifacts.
 
-## v0.2 Prototype - Pending
+### v0.2 Prototype - Pending
 
 Upgrades the runtime with persistence for events and spell state. Sanctum can be used for real workloads with no guarantees.
 Runs on a single node (no networking).
@@ -105,7 +112,7 @@ Runs on a single node (no networking).
   - [ ] (Option) Provide simple data structures, serialize and save to disk?
 - [ ] Add initial logging and metrics to identify performance characteristics.
 
-## v1.0 Beta - Pending
+### v1.0 Beta - Pending
 
 Sanctum fully featured as an MVP.
 
@@ -117,7 +124,7 @@ Sanctum fully featured as an MVP.
   - [ ] Documentation
   - [ ] Performance optimization
 
-## Work Triage
+### Work Triage
 
 - [ ] Wrap the Lua VM so that detailed telemetry can be emitted, per instance.
     - memory usage, spell execution count+time, event input and output counters.
