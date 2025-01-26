@@ -172,13 +172,12 @@ fn loadAdditionalFlags(args: [][:0]u8) !u32 {
 }
 
 fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs, lua: *Lua) !void {
+    _ = alloc;
     // The seed event is placed on top of the stack to prepare for execution. I believe this is
     // temporary, for the POC-phase of the project, and will eventually be replaced by an event
     // [de]serialization layer with an event queues to pull events from.
     try checkedDoString(lua, command.event_seed_lua);
     try prepareSpellCall(lua, "cast", 1);
-
-    try popPushMessagePackRoundTrip(lua, alloc, command, LuaType.Table);
 
     var i: usize = 0;
     const runaway_loop_bound = 1_000;
@@ -189,7 +188,6 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs, lua: *Lua) !voi
         }
 
         try prepareSpellCall(lua, "cast", 1);
-        try popPushMessagePackRoundTrip(lua, alloc, command, LuaType.Table);
     }
 
     lua.pop(1);
