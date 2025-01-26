@@ -3,47 +3,32 @@ name: Regression Tests
 on:
   push:
     branches: [ "main" ]
+    paths:
+      - src/**
+      - build.zig
+      - build.zig.zon
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: ⬇️ Checkout
       uses: actions/checkout@v4
       with:
         submodules: true  # or 'recursive' if you have nested submodules
-        
-    - name: Get Date
-      id: date
-      run: echo "month=$(date +'%Y-%m')" >> $GITHUB_OUTPUT
-      
-    - name: 📦 Cache
-      uses: actions/cache@v3
-      id: cache-deps
-      with:
-        path: |
-          ~/.local/bin
-          ~/.local/lib
-          ~/.cache/pip
-          ~/zig
-          ~/.just
-        key: ${{ runner.os }}-deps-${{ steps.date.outputs.month }}
 
     - name: 🐍 Install Python
-      if: steps.cache-deps.outputs.cache-hit != 'true'
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
     - name: (Z) Install Zig
-      if: steps.cache-deps.outputs.cache-hit != 'true'
       uses: goto-bus-stop/setup-zig@v2
       with:
         version: master
 
     - name: 〰️ Install just
-      if: steps.cache-deps.outputs.cache-hit != 'true'
       uses: extractions/setup-just@v1
       with:
         just-version: '*'
