@@ -15,7 +15,7 @@ freeze: build
     python3 {{regression_tester}} {{sanctum}} {{regression_suite}} --freeze
 
 run: build
-    {{sanctum}} cast {{sample_spell}} --seed {{sample_event}} --dump-events
+    {{sanctum}} cast {{sample_spell}} --seed {{sample_event}}
 
 debug: build
     {{debug}} {{sanctum}} cast {{sample_spell}} --seed {{sample_event}} --dump-events
