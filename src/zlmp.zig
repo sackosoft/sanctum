@@ -181,13 +181,13 @@ inline fn toMessagePackOptionsInternal(
 fn packInto(lua: *Lua, al: *ArrayList(u8), index: i32) !void {
     var writer = al.writer();
     switch (lua.typeOf(index)) {
-        .Nil => {
+        .nil => {
             try writer.writeByte(@intFromEnum(Protocol.Tags.Nil));
         },
-        .Boolean => {
+        .boolean => {
             try writer.writeByte(@intFromEnum(Protocol.Tags.False) + @intFromBool(try lua.toBooleanStrict(index)));
         },
-        .Number => {
+        .number => {
             if (lua.isInteger(index)) {
                 // LuaInteger is usually an i64, but Lua can be compiled with flags to target i32.
                 // That case is *not* handled and I do not have any plans to handle it in the future.
@@ -198,20 +198,20 @@ fn packInto(lua: *Lua, al: *ArrayList(u8), index: i32) !void {
                 try packNumberInto(&writer, try lua.toNumberStrict(index));
             }
         },
-        .String => {
+        .string => {
             try packStringInto(&writer, try lua.toLString(index));
         },
-        .Table => {
+        .table => {
             try packMapInto(al, &writer, lua, index);
         },
 
         // All non-data types will be ignored by design. These types cannot be serialized to the
         // message pack format and will be lost during a round trip through serialization.
-        .None, .Function, .Thread => {},
+        .none, .function, .thread => {},
 
         // We may end up implementing various functionalities via these types, but they will always
         // be platform-provided and not meaningful to any user-controlled data object.
-        .Userdata, .LightUserdata => {},
+        .userdata, .light_userdata => {},
     }
 }
 
@@ -280,8 +280,8 @@ fn packMapInto(al: *ArrayList(u8), writer: *ArrayList(u8).Writer, lua: *Lua, ind
 
 fn canBeSerialized(lua_type: LuaType) bool {
     return switch (lua_type) {
-        .Nil, .Boolean, .Number, .String, .Table => true,
-        .None, .Function, .Thread, .Userdata, .LightUserdata => false,
+        .nil, .boolean, .number, .string, .table => true,
+        .none, .function, .thread, .userdata, .light_userdata => false,
     };
 }
 
@@ -445,11 +445,11 @@ fn sizeOf(lua: *Lua, index: i32) !usize {
     const messagePackMapOverheadBytes = 5;
 
     return switch (lua.typeOf(index)) {
-        .Nil => 1,
-        .Boolean => 1,
-        .Number => if (lua.isInteger(index)) @sizeOf(LuaInteger) else @sizeOf(LuaNumber),
-        .String => lua.lengthOf(index),
-        .Table => blk: {
+        .nil => 1,
+        .boolean => 1,
+        .number => if (lua.isInteger(index)) @sizeOf(LuaInteger) else @sizeOf(LuaNumber),
+        .string => lua.lengthOf(index),
+        .table => blk: {
             var sz: usize = 0;
             sz += messagePackMapOverheadBytes;
 
@@ -467,11 +467,11 @@ fn sizeOf(lua: *Lua, index: i32) !usize {
 
         // All non-data types will be ignored by design. These types cannot be serialized to the
         // message pack format and will be lost during a round trip through serialization.
-        .None, .Function, .Thread => 0,
+        .none, .function, .thread => 0,
 
         // We may end up implementing various functionalities via these types, but they will always
         // be platform-provided and not meaningful to any user-controlled data object.
-        .Userdata, .LightUserdata => 0,
+        .userdata, .light_userdata => 0,
     };
 }
 

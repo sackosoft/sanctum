@@ -1,4 +1,4 @@
-Unstable magic detected. The spell is missing required function 'cast'. Found a 'String' called 'cast' instead.
+Unstable magic detected. The spell is missing required function 'cast'. Found a 'string' called 'cast' instead.
    1 | local spell = {
    2 |     cast = "Hello, world!"
    3 | }
