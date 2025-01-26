@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 const std = @import("std");
-const ziglua = @import("ziglua");
 const sanctum = @import("libsanctum");
 const zlmp = @import("libzlmp");
 
-const Lua = ziglua.Lua;
-const LuaType = ziglua.LuaType;
-const LuaInteger = ziglua.Integer;
-const LuaNumber = ziglua.Number;
+const luajit = @import("luajit");
+const Lua = luajit.Lua;
+const LuaType = luajit.Lua.Type;
+const LuaInteger = luajit.Lua.Integer;
+const LuaNumber = luajit.Lua.Number;
 
 const MAX_SPELL_SIZE_BYTES: usize = 1024 * 512;
 
@@ -132,10 +132,10 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
     defer lua.deinit();
 
     // Allows for `print()`, among other things
-    lua.openBase();
+    lua.openBaseLib();
 
     // Allows for `string.format()`, among other things.
-    lua.openString();
+    lua.openStringLib();
 
     // The spell is a table that sits on the bottom of the stack. At present, it should never
     // be mutated and it should never move on the stack. Calls to functions inside this table
@@ -149,7 +149,7 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
     try checkedDoString(lua, command.event_seed_lua);
     try prepareSpellCall(lua, "cast", 1);
 
-    try popPushMessagePackRoundTrip(lua, alloc, command, LuaType.table);
+    try popPushMessagePackRoundTrip(lua, alloc, command, LuaType.Table);
 
     var i: usize = 0;
     const runaway_loop_bound = 1_000;
@@ -160,7 +160,7 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
         }
 
         try prepareSpellCall(lua, "cast", 1);
-        try popPushMessagePackRoundTrip(lua, alloc, command, LuaType.table);
+        try popPushMessagePackRoundTrip(lua, alloc, command, LuaType.Table);
     }
 }
 
@@ -192,21 +192,21 @@ fn dumpEvent(message: []const u8) !void {
 
 fn validateCallable(lua: *Lua, function_name: [:0]const u8, lua_source: [:0]const u8) !void {
     const spellReturnType = lua.typeOf(-1);
-    if (spellReturnType != LuaType.table) {
+    if (spellReturnType != LuaType.Table) {
         std.debug.print("Unable magic detected. The spell must return a lua table, but found a {s} instead.\n", .{@tagName(spellReturnType)});
         printSourceCodeContext(lua_source, null, 0);
         return error.ExplainedExiting;
     }
 
-    try lua.pushAny(function_name);
+    lua.pushLString(function_name);
     const castType = lua.getTable(-2);
-    if (castType == LuaType.nil) {
+    if (castType == LuaType.Nil) {
         std.debug.print("Unstable magic detected. The spell is missing the required function named '{s}'.\n", .{function_name});
         printSourceCodeContext(lua_source, null, 0);
         return error.ExplainedExiting;
     }
 
-    if (castType != LuaType.function) {
+    if (castType != LuaType.Function) {
         std.debug.print(
             "Unstable magic detected. The spell is missing required function '{s}'. Found a '{s}' called '{s}' instead.\n",
             .{ function_name, @tagName(castType), function_name },
@@ -225,14 +225,14 @@ fn validateCallable(lua: *Lua, function_name: [:0]const u8, lua_source: [:0]cons
 /// are already on the stack, `stack_argc` should be set to `0`. In this case, it is the responsibility of the
 /// caller to push the arguments to the function onto the stack after `prepareSpellCall` returns.
 fn prepareSpellCall(lua: *Lua, function_name: []const u8, stack_argc: u8) !void {
-    try lua.pushAny(function_name);
+    lua.pushLString(function_name);
 
     // TODO: I believe the spell is always at the bottom of the stack. Is it possible and/or is it more
     // simple to always index from the bottom rather than a relative offset from the top?
     const table_index = @as(i32, -2) - @as(i32, @intCast(stack_argc));
 
     const valType = lua.getTable(table_index);
-    if (valType != LuaType.function) {
+    if (valType != LuaType.Function) {
         std.debug.print(
             "Error: Preparing to call '{s}()'; expected to find the spell containing that function on the stack at ({d}); however, a {s} was found instead.\n",
             .{ function_name, table_index, @tagName(valType) },
@@ -255,7 +255,7 @@ fn checkedDoString(lua: *Lua, source: [:0]const u8) !void {
 }
 
 fn checkedCall(lua: *Lua, command: RunCommandArgs) !void {
-    lua.protectedCall(.{ .args = 1, .results = 1 }) catch |err| {
+    lua.protectedCall(1, 1, 0) catch |err| {
         return try explainError(err, lua, command.spell.lua);
     };
 }
@@ -276,7 +276,7 @@ fn explainError(e: anytype, lua: *Lua, source: [:0]const u8) !void {
         try explainRuntimeError(lua, source);
         return error.ExplainedExiting;
     } else {
-        const err_text = try lua.toString(-1);
+        const err_text = try lua.toLString(-1);
         std.debug.print("Lua Error Text: '{s}'\n", .{err_text});
     }
 
@@ -284,7 +284,7 @@ fn explainError(e: anytype, lua: *Lua, source: [:0]const u8) !void {
 }
 
 fn explainRuntimeError(lua: *Lua, source: [:0]const u8) !void {
-    const err_text = try lua.toString(-1);
+    const err_text = try lua.toLString(-1);
     var line: ?usize = null;
     if (std.mem.indexOf(u8, err_text, ":")) |first_colon| {
         if (std.mem.indexOf(u8, err_text[first_colon + 1 ..], ":")) |second_colon| {
@@ -303,7 +303,7 @@ fn explainRuntimeError(lua: *Lua, source: [:0]const u8) !void {
 fn explainSyntaxError(lua: *Lua, source: [:0]const u8) !void {
     var line: ?usize = null;
     std.debug.print("Spell contains Lua syntax error", .{});
-    const err_text = try lua.toString(-1);
+    const err_text = try lua.toLString(-1);
     var parsed = false;
     if (std.mem.indexOf(u8, err_text, ":")) |first_colon| {
         if (std.mem.indexOf(u8, err_text[first_colon + 1 ..], ":")) |second_colon| {
