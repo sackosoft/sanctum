@@ -4,21 +4,7 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
 
-const native_endianness = @import("builtin").cpu.arch.endian();
-
-const luajit = @import("luajit");
-const Lua = luajit.Lua;
-const LuaType = Lua.Type;
-const LuaInteger = luajit.Lua.Integer;
-const LuaNumber = luajit.Lua.Number;
-
-/// Returned by one of the `toMessagePack()` functions, contains a serialized version of a Lua VM value
-/// on the stack. Used to save a value to storage or transmit the value over the network, as necessary.
-/// The value can be placed back on a Lua VM stack with one of the `pushMessagePack()` functions.
-pub const MessagePackBuffer = struct {
-    /// A Message Pack formatted value that was serialized from a value on the Lua VM stack.
-    message: []const u8,
-};
+const Lua = @import("luajit").Lua;
 
 /// Serializes the value on the stack at the specified index to a binary representation
 /// using the Message Pack protocol. Uses the default options for serialization. The caller
@@ -30,7 +16,7 @@ pub const MessagePackBuffer = struct {
 ///
 /// * Pops: `0`
 /// * Pushes: `0`
-pub fn toMessagePack(lua: *Lua, index: i32, alloc: std.mem.Allocator) !MessagePackBuffer {
+pub fn toMessagePack(lua: *Lua, index: i32, alloc: std.mem.Allocator) ![]const u8 {
     return toMessagePackOptions(lua, index, alloc, .{});
 }
 
@@ -44,7 +30,7 @@ pub fn toMessagePack(lua: *Lua, index: i32, alloc: std.mem.Allocator) !MessagePa
 ///
 /// * Pops: `0`
 /// * Pushes: `0`
-pub fn toMessagePackOptions(lua: *Lua, index: i32, alloc: std.mem.Allocator, options: ToMessagePackOptions) !MessagePackBuffer {
+pub fn toMessagePackOptions(lua: *Lua, index: i32, alloc: std.mem.Allocator, options: ToMessagePackOptions) ![]const u8 {
     return toMessagePackOptionsInternal(lua, index, alloc, options);
 }
 
@@ -54,13 +40,13 @@ pub fn toMessagePackOptions(lua: *Lua, index: i32, alloc: std.mem.Allocator, opt
 ///
 /// * Pops: `0`
 /// * Pushes: `1`
-pub fn pushMessagePack(lua: *Lua, buffer: MessagePackBuffer) !void {
+pub fn pushMessagePack(lua: *Lua, buffer: []const u8) !void {
     var i: usize = 0;
-    while (i < buffer.message.len) {
+    while (i < buffer.len) {
         try pushMessagePackInternal(lua, &i, buffer);
     }
 
-    std.debug.assert(i == buffer.message.len);
+    std.debug.assert(i == buffer.len);
 }
 
 /// Controls how the serialization fucttions allocate memory when serializing lua values.
@@ -153,12 +139,12 @@ const Protocol = struct {
     };
 };
 
-inline fn toMessagePackOptionsInternal(
+fn toMessagePackOptionsInternal(
     lua: *Lua,
     index: i32,
     alloc: std.mem.Allocator,
     options: ToMessagePackOptions,
-) !MessagePackBuffer {
+) ![]const u8 {
     var al = try switch (options.allocation_strategy) {
         .exact => blk: {
             const size: usize = try sizeOf(lua, index);
@@ -175,7 +161,7 @@ inline fn toMessagePackOptionsInternal(
     // the data slice, and doing cleanup on deinit; or to pull the slice from the array
     // list without using `toOwnedSlice`. I don't know if I can just return `allocatedSlice`
     // and have the caller correctly deallocate it?
-    return .{ .message = try al.toOwnedSlice() };
+    return try al.toOwnedSlice();
 }
 
 fn packInto(lua: *Lua, al: *ArrayList(u8), index: i32) !void {
@@ -189,11 +175,11 @@ fn packInto(lua: *Lua, al: *ArrayList(u8), index: i32) !void {
         },
         .number => {
             if (lua.isInteger(index)) {
-                // LuaInteger is usually an i64, but Lua can be compiled with flags to target i32.
+                // Lua.Integer is usually an i64, but Lua can be compiled with flags to target i32.
                 // That case is *not* handled and I do not have any plans to handle it in the future.
                 try packIntegerInto(&writer, try lua.toIntegerStrict(index));
             } else {
-                // LuaNumber is usually a f64, but Lua can be compiled with flags to target f32.
+                // Lua.Number is usually a f64, but Lua can be compiled with flags to target f32.
                 // That cast is *not* handled and I do not have any plans to handle it in the future.
                 try packNumberInto(&writer, try lua.toNumberStrict(index));
             }
@@ -278,7 +264,7 @@ fn packMapInto(al: *ArrayList(u8), writer: *ArrayList(u8).Writer, lua: *Lua, ind
     std.mem.writeInt(u32, n_slot, n, .big);
 }
 
-fn canBeSerialized(lua_type: LuaType) bool {
+fn canBeSerialized(lua_type: Lua.Type) bool {
     return switch (lua_type) {
         .nil, .boolean, .number, .string, .table => true,
         .none, .function, .thread, .userdata, .light_userdata => false,
@@ -333,7 +319,7 @@ fn writeTaggedInt(
     writer: *ArrayList(u8).Writer,
     tag: Protocol.Tags,
     comptime T: type,
-    int: LuaInteger,
+    int: Lua.Integer,
 ) !void {
     try writer.writeByte(@intFromEnum(tag));
     try writer.writeInt(T, @as(T, @truncate(int)), .big);
@@ -447,7 +433,7 @@ fn sizeOf(lua: *Lua, index: i32) !usize {
     return switch (lua.typeOf(index)) {
         .nil => 1,
         .boolean => 1,
-        .number => if (lua.isInteger(index)) @sizeOf(LuaInteger) else @sizeOf(LuaNumber),
+        .number => if (lua.isInteger(index)) @sizeOf(Lua.Integer) else @sizeOf(Lua.Number),
         .string => lua.lengthOf(index),
         .table => blk: {
             var sz: usize = 0;
@@ -486,8 +472,8 @@ const Iter = struct {
         index.* += @sizeOf(T);
     }
 };
-pub fn pushMessagePackInternal(lua: *Lua, i: *usize, buffer: MessagePackBuffer) !void {
-    const tag_value = buffer.message[i.*];
+pub fn pushMessagePackInternal(lua: *Lua, i: *usize, buffer: []const u8) !void {
+    const tag_value = buffer[i.*];
     Iter.next(i);
 
     // Unfortunately, Zig does not support swich statement ranges for enum values, so we have to handle
@@ -509,8 +495,8 @@ pub fn pushMessagePackInternal(lua: *Lua, i: *usize, buffer: MessagePackBuffer) 
             const len = @as(u5, @truncate(tag_value));
 
             // The trailing zero is missing for some reason, need to look into that.
-            // std.debug.assert(buffer.message[i.* + len - 1] == 0);
-            const str = buffer.message[i.* .. i.* + len];
+            // std.debug.assert(buffer[i.* + len - 1] == 0);
+            const str = buffer[i.* .. i.* + len];
             Iter.advance(i, len);
 
             lua.pushLString(str);
@@ -532,69 +518,69 @@ pub fn pushMessagePackInternal(lua: *Lua, i: *usize, buffer: MessagePackBuffer) 
 
         .Int8 => {
             const t_int = i8;
-            pushInteger(lua, t_int, i.*, buffer.message);
+            pushInteger(lua, t_int, i.*, buffer);
             Iter.advanceByType(i, t_int);
         },
         .Int16 => {
             const t_int = i16;
-            pushInteger(lua, t_int, i.*, buffer.message);
+            pushInteger(lua, t_int, i.*, buffer);
             Iter.advanceByType(i, t_int);
         },
         .Int32 => {
             const t_int = i32;
-            pushInteger(lua, t_int, i.*, buffer.message);
+            pushInteger(lua, t_int, i.*, buffer);
             Iter.advanceByType(i, t_int);
         },
         .Int64 => {
             const t_int = i64;
-            pushInteger(lua, t_int, i.*, buffer.message);
+            pushInteger(lua, t_int, i.*, buffer);
             Iter.advanceByType(i, t_int);
         },
 
         .Str8 => {
             const t_len_int = u8;
-            const len = peekInteger(t_len_int, i.*, buffer.message);
+            const len = peekInteger(t_len_int, i.*, buffer);
             Iter.advanceByType(i, t_len_int);
 
-            pushString(lua, i.*, buffer.message, @intCast(len));
+            pushString(lua, i.*, buffer, @intCast(len));
             Iter.advance(i, len);
         },
         .Str16 => {
             const t_len_int = u16;
-            const len = peekInteger(t_len_int, i.*, buffer.message);
+            const len = peekInteger(t_len_int, i.*, buffer);
             Iter.advanceByType(i, t_len_int);
 
-            pushString(lua, i.*, buffer.message, @intCast(len));
+            pushString(lua, i.*, buffer, @intCast(len));
             Iter.advance(i, len);
         },
         .Str32 => {
             const t_len_int = u32;
-            const len = peekInteger(t_len_int, i.*, buffer.message);
+            const len = peekInteger(t_len_int, i.*, buffer);
             Iter.advanceByType(i, t_len_int);
 
-            pushString(lua, i.*, buffer.message, @intCast(len));
+            pushString(lua, i.*, buffer, @intCast(len));
             Iter.advance(i, len);
         },
 
         .Float32 => {
             const t_float = f32;
-            const value = peekFloat(t_float, i.*, buffer.message);
+            const value = peekFloat(t_float, i.*, buffer);
             Iter.advanceByType(i, t_float);
 
-            lua.pushNumber(@as(LuaNumber, @floatCast(value)));
+            lua.pushNumber(@as(Lua.Number, @floatCast(value)));
         },
         .Float64 => {
             const t_float = f64;
-            const value = peekFloat(t_float, i.*, buffer.message);
+            const value = peekFloat(t_float, i.*, buffer);
             Iter.advanceByType(i, t_float);
 
-            lua.pushNumber(@as(LuaNumber, @floatCast(value)));
+            lua.pushNumber(@as(Lua.Number, @floatCast(value)));
         },
 
         // At the time of writing, only map32 format is supported by the serializer
         .Map32 => {
             const t_int = u32;
-            const kvp_count: u32 = peekInteger(t_int, i.*, buffer.message);
+            const kvp_count: u32 = peekInteger(t_int, i.*, buffer);
             Iter.advanceByType(i, t_int);
 
             try pushTable(lua, i, buffer, kvp_count);
@@ -609,7 +595,7 @@ pub fn pushMessagePackInternal(lua: *Lua, i: *usize, buffer: MessagePackBuffer) 
 
 fn pushInteger(lua: *Lua, comptime T: type, i: usize, message: []const u8) void {
     const value = peekInteger(T, i, message);
-    lua.pushInteger(@as(LuaInteger, @intCast(value)));
+    lua.pushInteger(@as(Lua.Integer, @intCast(value)));
 }
 
 fn pushString(lua: *Lua, i: usize, message: []const u8, len: usize) void {
@@ -617,7 +603,7 @@ fn pushString(lua: *Lua, i: usize, message: []const u8, len: usize) void {
     lua.pushLString(str);
 }
 
-fn pushTable(lua: *Lua, i: *usize, buffer: MessagePackBuffer, kvp_count: u32) anyerror!void {
+fn pushTable(lua: *Lua, i: *usize, buffer: []const u8, kvp_count: u32) anyerror!void {
     lua.newTable();
 
     for (0..kvp_count) |_| {

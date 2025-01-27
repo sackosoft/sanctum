@@ -27,8 +27,8 @@ For more detailed reference information and documentation, refer to the [`docuno
 ## Features
 
 * ✨ **Spells**: User-defined Lua code for actions or transformations, invoked with events from the event stream.
-* 🔓 **Flexible**: Write stateful or stateless spells, use the storage system provided by the runtime or bring your own backend.
-* ⏩ **Fast**: Written in Zig so that you don't have to worry about performance.
+* 💾 **Storage**: Write stateful or stateless spells, use the storage system provided by the runtime or bring your own backend.
+* ⏩ **Fast**: Written in Zig ⚡ so that you don't have to worry about performance.
 
 
 ## Installation

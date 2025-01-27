@@ -167,11 +167,11 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
 fn popPushMessagePackRoundTrip(lua: *Lua, alloc: std.mem.Allocator, command: RunCommandArgs, expected_type: LuaType) !void {
     try guardTypeAt(lua, expected_type, -1);
 
-    const event: zlmp.MessagePackBuffer = try zlmp.toMessagePack(lua, -1, alloc);
-    defer alloc.free(event.message);
+    const event = try zlmp.toMessagePack(lua, -1, alloc);
+    defer alloc.free(event);
 
     if (command.hasFlag(RunCommandArgs.Flags.DumpEvents)) {
-        try dumpEvent(event.message);
+        try dumpEvent(event);
     }
 
     lua.pop(1);

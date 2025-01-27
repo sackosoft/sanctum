@@ -1,7 +1,6 @@
 winheight src 25
 set max-value-size 750000
 directory .
-set logging enabled on
 
 define bdump
 dump binary memory dump.bin $arg0 $arg0+$arg1
