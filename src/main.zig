@@ -5,11 +5,7 @@ const std = @import("std");
 const sanctum = @import("libsanctum");
 const zlmp = @import("libzlmp");
 
-const luajit = @import("luajit");
-const Lua = luajit.Lua;
-const LuaType = luajit.Lua.Type;
-const LuaInteger = luajit.Lua.Integer;
-const LuaNumber = luajit.Lua.Number;
+const Lua = @import("luajit").Lua;
 
 const MAX_SPELL_SIZE_BYTES: usize = 1024 * 512;
 
@@ -149,7 +145,7 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
     try checkedDoString(lua, command.event_seed_lua);
     try prepareSpellCall(lua, "cast", 1);
 
-    try popPushMessagePackRoundTrip(lua, alloc, command, LuaType.table);
+    try popPushMessagePackRoundTrip(lua, alloc, command, Lua.Type.table);
 
     var i: usize = 0;
     const runaway_loop_bound = 1_000;
@@ -160,11 +156,11 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
         }
 
         try prepareSpellCall(lua, "cast", 1);
-        try popPushMessagePackRoundTrip(lua, alloc, command, LuaType.table);
+        try popPushMessagePackRoundTrip(lua, alloc, command, Lua.Type.table);
     }
 }
 
-fn popPushMessagePackRoundTrip(lua: *Lua, alloc: std.mem.Allocator, command: RunCommandArgs, expected_type: LuaType) !void {
+fn popPushMessagePackRoundTrip(lua: *Lua, alloc: std.mem.Allocator, command: RunCommandArgs, expected_type: Lua.Type) !void {
     try guardTypeAt(lua, expected_type, -1);
 
     const event = try zlmp.toMessagePack(lua, -1, alloc);
@@ -192,7 +188,7 @@ fn dumpEvent(message: []const u8) !void {
 
 fn validateCallable(lua: *Lua, function_name: [:0]const u8, lua_source: [:0]const u8) !void {
     const spellReturnType = lua.typeOf(-1);
-    if (spellReturnType != LuaType.table) {
+    if (spellReturnType != Lua.Type.table) {
         std.debug.print("Unable magic detected. The spell must return a lua table, but found a {s} instead.\n", .{@tagName(spellReturnType)});
         printSourceCodeContext(lua_source, null, 0);
         return error.ExplainedExiting;
@@ -200,13 +196,13 @@ fn validateCallable(lua: *Lua, function_name: [:0]const u8, lua_source: [:0]cons
 
     lua.pushLString(function_name);
     const castType = lua.getTable(-2);
-    if (castType == LuaType.nil) {
+    if (castType == Lua.Type.nil) {
         std.debug.print("Unstable magic detected. The spell is missing the required function named '{s}'.\n", .{function_name});
         printSourceCodeContext(lua_source, null, 0);
         return error.ExplainedExiting;
     }
 
-    if (castType != LuaType.function) {
+    if (castType != Lua.Type.function) {
         std.debug.print(
             "Unstable magic detected. The spell is missing required function '{s}'. Found a '{s}' called '{s}' instead.\n",
             .{ function_name, @tagName(castType), function_name },
@@ -232,7 +228,7 @@ fn prepareSpellCall(lua: *Lua, function_name: []const u8, stack_argc: u8) !void 
     const table_index = @as(i32, -2) - @as(i32, @intCast(stack_argc));
 
     const valType = lua.getTable(table_index);
-    if (valType != LuaType.function) {
+    if (valType != Lua.Type.function) {
         std.debug.print(
             "Error: Preparing to call '{s}()'; expected to find the spell containing that function on the stack at ({d}); however, a {s} was found instead.\n",
             .{ function_name, table_index, @tagName(valType) },
@@ -260,7 +256,7 @@ fn checkedCall(lua: *Lua, command: RunCommandArgs) !void {
     };
 }
 
-fn guardTypeAt(lua: *Lua, expected_type: LuaType, offset: i32) !void {
+fn guardTypeAt(lua: *Lua, expected_type: Lua.Type, offset: i32) !void {
     const actual_type = lua.typeOf(offset);
     if (expected_type != actual_type) {
         std.debug.print("[Guard] Expected to find a '{s}' on the stack at ({d}) but found a '{s}' instead.\n", .{ @tagName(expected_type), offset, @tagName(actual_type) });
