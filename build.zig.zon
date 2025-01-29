@@ -6,6 +6,10 @@
             .url = "git+https://github.com/sackosoft/zig-luajit#dcf3a8efe6f2fd41a777be840e88ee1036973a08",
             .hash = "122031d41cfef2021819a78655ec95f703288ed8907d978b0ddd575f5a1a36e25d44",
         },
+        .sqlite = .{
+            .url = "git+https://github.com/vrischmann/zig-sqlite#0155a63a7efb64da6c535ee31e92ec421712951a",
+            .hash = "1220bbf36166a56f03ca55c2f455f70cdb3dd5f8dca1f7c78e57d9402add9635b2b9",
+        },
     },
     .paths = .{
         "build.zig",

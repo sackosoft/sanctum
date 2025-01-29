@@ -88,6 +88,13 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("luajit", luajit);
     lib_static_zlmp.root_module.addImport("luajit", luajit);
 
+    const sqlite_dep = b.dependency("sqlite", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const sqlite = sqlite_dep.module("sqlite");
+    exe.root_module.addImport("sqlite", sqlite);
+
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).
