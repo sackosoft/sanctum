@@ -143,6 +143,11 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
     // temporary, for the POC-phase of the project, and will eventually be replaced by an event
     // [de]serialization layer with an event queues to pull events from.
     try checkedDoString(lua, command.event_seed_lua);
+    const is_topic_match = try checkTopic(lua);
+    if (!is_topic_match) {
+        return;
+    }
+
     try prepareSpellCall(lua, "cast", 1);
 
     try popPushMessagePackRoundTrip(lua, alloc, command, Lua.Type.table);
@@ -158,6 +163,21 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
         try prepareSpellCall(lua, "cast", 1);
         try popPushMessagePackRoundTrip(lua, alloc, command, Lua.Type.table);
     }
+}
+
+fn checkTopic(lua: *Lua) !bool {
+    lua.pushLString("topic");
+    const topic_type = lua.getTable(-2);
+    if (topic_type == Lua.Type.nil) {
+        return true;
+    }
+
+    if (topic_type != Lua.Type.string and topic_type != Lua.Type.table) {
+        std.debug.print("The spell's topic is not valid. It must be a string or table of strings, but found a {s}\n", .{@tagName(topic_type)});
+        return error.ExplainedExiting;
+    }
+
+    return true;
 }
 
 fn popPushMessagePackRoundTrip(lua: *Lua, alloc: std.mem.Allocator, command: RunCommandArgs, expected_type: Lua.Type) !void {
