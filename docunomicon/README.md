@@ -97,5 +97,23 @@ return decrementing_counter_spell
 Usually, spells only care about a subset of the events flowing through the event stream. Spells may declaratively
 specity the kinds of events they wish to be cast on, or conditions that events must satisfy to be cast by a spell.
 
-The design for event filtering is open, and will change as the prototype of Sanctum is implemented.
+**The design for event filtering is unstable and subject to change while Sanctum is in the prototype phase.**
 
+Spells may declare their energy source by declaring a topic:
+
+```lua
+local counting_spell = {
+    topic = { "count-events" }
+}
+return counting_spell
+```
+
+The `topic` may be declared either as a string or a table of strings. Only events with the matching topic type will
+be processed by the spell.
+
+```lua
+local equivalent_spell = {
+    topic = "counting-events"
+}
+return equivalent_spell
+```
