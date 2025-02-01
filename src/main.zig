@@ -143,7 +143,8 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
     // temporary, for the POC-phase of the project, and will eventually be replaced by an event
     // [de]serialization layer with an event queues to pull events from.
     try checkedDoString(lua, command.event_seed_lua);
-    const is_topic_match = try checkTopic(lua);
+
+    const is_topic_match = try matchesTopic(lua, -2, -1);
     if (!is_topic_match) {
         return;
     }
@@ -165,19 +166,47 @@ fn runCommand(alloc: std.mem.Allocator, command: RunCommandArgs) !void {
     }
 }
 
-fn checkTopic(lua: *Lua) !bool {
+fn matchesTopic(lua: *Lua, spell_index: i32, event_index: i32) !bool {
     lua.pushLString("topic");
-    const topic_type = lua.getTable(-2);
-    if (topic_type == Lua.Type.nil) {
-        return true;
+    const spell_topic_type = lua.getTable(spell_index);
+    switch (spell_topic_type) {
+        Lua.Type.nil => {
+            std.debug.print("Nil1\n", .{});
+            lua.pop(1);
+            return true;
+        },
+        Lua.Type.string => {},
+        else => |t| {
+            lua.pop(1);
+            std.debug.print("The spell's `topic` selector is not valid. It must be a string, but found a {s}\n", .{@tagName(t)});
+            return error.ExplainedExiting;
+        },
     }
 
-    if (topic_type != Lua.Type.string and topic_type != Lua.Type.table) {
-        std.debug.print("The spell's topic is not valid. It must be a string or table of strings, but found a {s}\n", .{@tagName(topic_type)});
-        return error.ExplainedExiting;
+    const spell_topic = try lua.toLString(-1);
+    lua.pop(1);
+
+    lua.pushLString("$topic");
+    const event_topic_type = lua.getTable(event_index);
+    switch (event_topic_type) {
+        Lua.Type.nil => {
+            lua.pop(1);
+            std.debug.print("Nil2\n", .{});
+            return true;
+        },
+        Lua.Type.string => {},
+        else => |t| {
+            lua.pop(1);
+            std.debug.print("The spell's `topic` selector is not valid. It must be a string, but found a {s}\n", .{@tagName(t)});
+            return error.ExplainedExiting;
+        },
     }
 
-    return true;
+    const event_topic = try lua.toLString(-1);
+    lua.pop(1);
+
+    std.debug.print("'{s}' vs. '{s}'\n", .{ spell_topic, event_topic });
+    return std.mem.eql(u8, spell_topic, event_topic);
 }
 
 fn popPushMessagePackRoundTrip(lua: *Lua, alloc: std.mem.Allocator, command: RunCommandArgs, expected_type: Lua.Type) !void {
